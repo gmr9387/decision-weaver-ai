@@ -2,7 +2,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import {
   LayoutDashboard, FileText, Scale, FlaskConical, BarChart3,
-  Settings, Zap, ChevronLeft, ChevronRight, LogOut, User
+  Settings, Zap, ChevronLeft, ChevronRight, LogOut, User, BookOpen
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/use-auth';
@@ -14,6 +14,7 @@ const navItems = [
   { path: '/rules', label: 'Rules Studio', icon: Scale },
   { path: '/simulation', label: 'Simulation Lab', icon: FlaskConical },
   { path: '/analytics', label: 'Analytics', icon: BarChart3 },
+  { path: '/api-docs', label: 'API Docs', icon: BookOpen },
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
 

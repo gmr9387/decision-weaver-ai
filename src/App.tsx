@@ -15,6 +15,7 @@ import RulesStudio from "./pages/RulesStudio";
 import SimulationLab from "./pages/SimulationLab";
 import Analytics from "./pages/Analytics";
 import Settings from "./pages/Settings";
+import ApiDocs from "./pages/ApiDocs";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -37,6 +38,7 @@ const App = () => (
             <Route path="/simulation" element={<ProtectedRoute><SimulationLab /></ProtectedRoute>} />
             <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+            <Route path="/api-docs" element={<ProtectedRoute><ApiDocs /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
