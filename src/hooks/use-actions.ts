@@ -22,6 +22,7 @@ export function useRunInference() {
     onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: ['case', vars.caseId] });
       queryClient.invalidateQueries({ queryKey: ['cases'] });
+      queryClient.invalidateQueries({ queryKey: ['inference-history', vars.caseId] });
       toast({ title: 'Inference complete', description: 'Results have been saved.' });
     },
     onError: (err: any) => {

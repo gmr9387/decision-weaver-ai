@@ -240,3 +240,35 @@ export function useMetrics() {
     staleTime: 60000,
   });
 }
+
+export function useInferenceHistory(caseId: string | undefined) {
+  return useQuery({
+    queryKey: ['inference-history', caseId],
+    queryFn: async () => {
+      if (!caseId) return [];
+      const { data, error } = await supabase
+        .from('inference_runs')
+        .select('*')
+        .eq('case_id', caseId)
+        .order('created_at', { ascending: false });
+
+      if (error || !data) return [];
+      return data.map(row => ({
+        id: row.id,
+        createdAt: row.created_at,
+        mode: row.mode,
+        decision: row.decision || 'unresolved',
+        confidence: row.confidence || 0,
+        confidenceBand: row.confidence_band || 'low',
+        severity: row.severity || 'medium',
+        explanation: row.explanation || '',
+        firedRulesCount: Array.isArray(row.fired_rules) ? (row.fired_rules as any[]).filter((r: any) => r.fired).length : 0,
+        totalRules: Array.isArray(row.fired_rules) ? (row.fired_rules as any[]).length : 0,
+        missingFacts: row.missing_facts || [],
+        contradictions: row.contradictions || [],
+      }));
+    },
+    enabled: !!caseId,
+    staleTime: 15000,
+  });
+}
