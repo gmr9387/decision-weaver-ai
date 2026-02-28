@@ -14,6 +14,56 @@ export type Database = {
   }
   public: {
     Tables: {
+      api_request_logs: {
+        Row: {
+          created_at: string
+          duration_ms: number | null
+          endpoint: string
+          id: string
+          ip_address: string | null
+          method: string
+          organization_id: string
+          request_body: Json | null
+          response_summary: string | null
+          status_code: number
+          user_agent: string | null
+        }
+        Insert: {
+          created_at?: string
+          duration_ms?: number | null
+          endpoint: string
+          id?: string
+          ip_address?: string | null
+          method: string
+          organization_id: string
+          request_body?: Json | null
+          response_summary?: string | null
+          status_code: number
+          user_agent?: string | null
+        }
+        Update: {
+          created_at?: string
+          duration_ms?: number | null
+          endpoint?: string
+          id?: string
+          ip_address?: string | null
+          method?: string
+          organization_id?: string
+          request_body?: Json | null
+          response_summary?: string | null
+          status_code?: number
+          user_agent?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "api_request_logs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       case_assignments: {
         Row: {
           assigned_at: string
@@ -520,6 +570,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      cleanup_old_api_logs: { Args: never; Returns: number }
       generate_org_api_key: { Args: { org_id: string }; Returns: string }
       get_user_org_id: { Args: { _user_id: string }; Returns: string }
       has_role: {
