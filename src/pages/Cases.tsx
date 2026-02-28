@@ -1,12 +1,12 @@
 import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { MOCK_CASES } from '@/lib/mock-data';
+import { useCases } from '@/hooks/use-data';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Search, Filter, ArrowUpDown, ChevronRight } from 'lucide-react';
-import type { Case, DecisionType, SeverityLevel } from '@/lib/types';
+import { Search, Filter, ArrowUpDown, ChevronRight, Loader2 } from 'lucide-react';
+import type { DecisionType, SeverityLevel } from '@/lib/types';
 
 const decisionColors: Record<DecisionType, string> = {
   approve: 'success', deny: 'destructive', flag: 'warning', escalate: 'critical',
@@ -31,6 +31,7 @@ function ConfidenceBar({ value }: { value?: number }) {
 }
 
 export default function Cases() {
+  const { data: allCases = [], isLoading } = useCases();
   const [search, setSearch] = useState('');
   const [sortField, setSortField] = useState<'createdAt' | 'confidence' | 'severity'>('createdAt');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -38,7 +39,7 @@ export default function Cases() {
   const [decisionFilter, setDecisionFilter] = useState<string>('all');
 
   const filtered = useMemo(() => {
-    let cases = [...MOCK_CASES];
+    let cases = [...allCases];
     if (search) {
       const q = search.toLowerCase();
       cases = cases.filter(c =>
@@ -58,7 +59,7 @@ export default function Cases() {
       return sortDir === 'desc' ? sev[b.severity] - sev[a.severity] : sev[a.severity] - sev[b.severity];
     });
     return cases;
-  }, [search, sortField, sortDir, severityFilter, decisionFilter]);
+  }, [allCases, search, sortField, sortDir, severityFilter, decisionFilter]);
 
   const toggleSort = (field: typeof sortField) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -71,7 +72,9 @@ export default function Cases() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-display-sm text-foreground">Cases</h1>
-            <p className="text-body-sm text-muted-foreground mt-1">{MOCK_CASES.length} total cases · {filtered.length} shown</p>
+            <p className="text-body-sm text-muted-foreground mt-1">
+              {isLoading ? 'Loading...' : `${allCases.length} total cases · ${filtered.length} shown`}
+            </p>
           </div>
         </div>
 
@@ -104,59 +107,65 @@ export default function Cases() {
 
         {/* Table */}
         <div className="rounded-xl border border-border bg-gradient-card overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-border bg-surface-2">
-                  <th className="text-left text-overline text-muted-foreground uppercase px-4 py-3">Case</th>
-                  <th className="text-left text-overline text-muted-foreground uppercase px-4 py-3">Category</th>
-                  <th className="text-left text-overline text-muted-foreground uppercase px-4 py-3 cursor-pointer" onClick={() => toggleSort('severity')}>
-                    <span className="flex items-center gap-1">Severity <ArrowUpDown className="w-3 h-3" /></span>
-                  </th>
-                  <th className="text-left text-overline text-muted-foreground uppercase px-4 py-3">Decision</th>
-                  <th className="text-left text-overline text-muted-foreground uppercase px-4 py-3 cursor-pointer" onClick={() => toggleSort('confidence')}>
-                    <span className="flex items-center gap-1">Confidence <ArrowUpDown className="w-3 h-3" /></span>
-                  </th>
-                  <th className="text-left text-overline text-muted-foreground uppercase px-4 py-3">Owner</th>
-                  <th className="text-left text-overline text-muted-foreground uppercase px-4 py-3 cursor-pointer" onClick={() => toggleSort('createdAt')}>
-                    <span className="flex items-center gap-1">Created <ArrowUpDown className="w-3 h-3" /></span>
-                  </th>
-                  <th className="px-4 py-3"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.slice(0, 50).map(c => (
-                  <tr key={c.id} className="border-b border-border/50 hover:bg-surface-hover transition-colors">
-                    <td className="px-4 py-3">
-                      <div className="text-body-sm font-medium text-foreground">{c.caseNumber}</div>
-                      <div className="text-caption text-muted-foreground">{c.source}</div>
-                    </td>
-                    <td className="px-4 py-3 text-body-sm text-foreground">{c.category}</td>
-                    <td className="px-4 py-3">
-                      <Badge variant={severityColors[c.severity] as any} className="capitalize">{c.severity}</Badge>
-                    </td>
-                    <td className="px-4 py-3">
-                      {c.decision ? (
-                        <Badge variant={decisionColors[c.decision] as any} className="capitalize">{c.decision.replace('_', ' ')}</Badge>
-                      ) : (
-                        <span className="text-caption text-muted-foreground">Pending</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3"><ConfidenceBar value={c.confidence} /></td>
-                    <td className="px-4 py-3 text-body-sm text-muted-foreground">{c.owner}</td>
-                    <td className="px-4 py-3 text-caption text-muted-foreground">{new Date(c.createdAt).toLocaleDateString()}</td>
-                    <td className="px-4 py-3">
-                      <Link to={`/cases/${c.id}`}>
-                        <Button variant="ghost" size="icon" className="w-7 h-7">
-                          <ChevronRight className="w-4 h-4" />
-                        </Button>
-                      </Link>
-                    </td>
+          {isLoading ? (
+            <div className="flex items-center justify-center py-16">
+              <Loader2 className="w-6 h-6 text-primary animate-spin" />
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-border bg-surface-2">
+                    <th className="text-left text-overline text-muted-foreground uppercase px-4 py-3">Case</th>
+                    <th className="text-left text-overline text-muted-foreground uppercase px-4 py-3">Category</th>
+                    <th className="text-left text-overline text-muted-foreground uppercase px-4 py-3 cursor-pointer" onClick={() => toggleSort('severity')}>
+                      <span className="flex items-center gap-1">Severity <ArrowUpDown className="w-3 h-3" /></span>
+                    </th>
+                    <th className="text-left text-overline text-muted-foreground uppercase px-4 py-3">Decision</th>
+                    <th className="text-left text-overline text-muted-foreground uppercase px-4 py-3 cursor-pointer" onClick={() => toggleSort('confidence')}>
+                      <span className="flex items-center gap-1">Confidence <ArrowUpDown className="w-3 h-3" /></span>
+                    </th>
+                    <th className="text-left text-overline text-muted-foreground uppercase px-4 py-3">Owner</th>
+                    <th className="text-left text-overline text-muted-foreground uppercase px-4 py-3 cursor-pointer" onClick={() => toggleSort('createdAt')}>
+                      <span className="flex items-center gap-1">Created <ArrowUpDown className="w-3 h-3" /></span>
+                    </th>
+                    <th className="px-4 py-3"></th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {filtered.slice(0, 50).map(c => (
+                    <tr key={c.id} className="border-b border-border/50 hover:bg-surface-hover transition-colors">
+                      <td className="px-4 py-3">
+                        <div className="text-body-sm font-medium text-foreground">{c.caseNumber}</div>
+                        <div className="text-caption text-muted-foreground">{c.source}</div>
+                      </td>
+                      <td className="px-4 py-3 text-body-sm text-foreground">{c.category}</td>
+                      <td className="px-4 py-3">
+                        <Badge variant={severityColors[c.severity] as any} className="capitalize">{c.severity}</Badge>
+                      </td>
+                      <td className="px-4 py-3">
+                        {c.decision ? (
+                          <Badge variant={decisionColors[c.decision] as any} className="capitalize">{c.decision.replace('_', ' ')}</Badge>
+                        ) : (
+                          <span className="text-caption text-muted-foreground">Pending</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3"><ConfidenceBar value={c.confidence} /></td>
+                      <td className="px-4 py-3 text-body-sm text-muted-foreground">{c.owner}</td>
+                      <td className="px-4 py-3 text-caption text-muted-foreground">{new Date(c.createdAt).toLocaleDateString()}</td>
+                      <td className="px-4 py-3">
+                        <Link to={`/cases/${c.id}`}>
+                          <Button variant="ghost" size="icon" className="w-7 h-7">
+                            <ChevronRight className="w-4 h-4" />
+                          </Button>
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
     </AppLayout>

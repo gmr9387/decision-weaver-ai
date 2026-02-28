@@ -1,5 +1,5 @@
 import { AppLayout } from '@/components/layout/AppLayout';
-import { MOCK_CASES, MOCK_RULES, MOCK_METRICS } from '@/lib/mock-data';
+import { useCases, useRules, useMetrics } from '@/hooks/use-data';
 import { Badge } from '@/components/ui/badge';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
