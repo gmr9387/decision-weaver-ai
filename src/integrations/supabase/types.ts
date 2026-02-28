@@ -520,6 +520,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      generate_org_api_key: { Args: { org_id: string }; Returns: string }
       get_user_org_id: { Args: { _user_id: string }; Returns: string }
       has_role: {
         Args: {
