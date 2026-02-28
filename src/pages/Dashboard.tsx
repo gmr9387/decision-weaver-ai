@@ -1,35 +1,18 @@
 import { AppLayout } from '@/components/layout/AppLayout';
-import { MOCK_CASES, MOCK_METRICS, MOCK_RULES } from '@/lib/mock-data';
+import { useCases, useRules, useMetrics } from '@/hooks/use-data';
 import { Badge } from '@/components/ui/badge';
 import { motion } from 'framer-motion';
 import {
-  Activity, TrendingUp, AlertTriangle, Clock, CheckCircle2,
+  Activity, TrendingUp, AlertTriangle, CheckCircle2,
   ArrowUpRight, Zap, BarChart3
 } from 'lucide-react';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, PieChart, Pie, Cell
 } from 'recharts';
-
-const resolved = MOCK_CASES.filter(c => c.status === 'resolved').length;
-const escalated = MOCK_CASES.filter(c => c.status === 'escalated').length;
-const avgConf = MOCK_CASES.filter(c => c.confidence).reduce((s, c) => s + (c.confidence || 0), 0) / MOCK_CASES.filter(c => c.confidence).length;
-
-const decisionDist = Object.entries(
-  MOCK_CASES.filter(c => c.decision).reduce<Record<string, number>>((acc, c) => {
-    acc[c.decision!] = (acc[c.decision!] || 0) + 1; return acc;
-  }, {})
-).map(([name, value]) => ({ name, value }));
-
-const severityDist = Object.entries(
-  MOCK_CASES.reduce<Record<string, number>>((acc, c) => {
-    acc[c.severity] = (acc[c.severity] || 0) + 1; return acc;
-  }, {})
-).map(([name, value]) => ({ name, value }));
+import { useMemo } from 'react';
 
 const CHART_COLORS = ['hsl(185, 85%, 48%)', 'hsl(38, 92%, 50%)', 'hsl(152, 69%, 41%)', 'hsl(0, 72%, 51%)', 'hsl(210, 100%, 52%)', 'hsl(280, 70%, 55%)', 'hsl(15, 90%, 55%)', 'hsl(320, 70%, 50%)'];
-
-const topRules = [...MOCK_RULES].sort((a, b) => b.hitCount - a.hitCount).slice(0, 5);
 
 function MetricCard({ icon: Icon, label, value, change, color }: { icon: any; label: string; value: string; change?: string; color: string }) {
   return (
@@ -55,12 +38,37 @@ function MetricCard({ icon: Icon, label, value, change, color }: { icon: any; la
 }
 
 export default function Dashboard() {
-  const recentMetrics = MOCK_METRICS.slice(-14);
+  const { data: cases = [], isLoading: casesLoading } = useCases();
+  const { data: rules = [], isLoading: rulesLoading } = useRules();
+  const { data: metrics = [], isLoading: metricsLoading } = useMetrics();
+
+  const resolved = useMemo(() => cases.filter(c => c.status === 'resolved').length, [cases]);
+  const escalated = useMemo(() => cases.filter(c => c.status === 'escalated').length, [cases]);
+  const avgConf = useMemo(() => {
+    const withConf = cases.filter(c => c.confidence);
+    return withConf.length > 0 ? withConf.reduce((s, c) => s + (c.confidence || 0), 0) / withConf.length : 0;
+  }, [cases]);
+
+  const decisionDist = useMemo(() => Object.entries(
+    cases.filter(c => c.decision).reduce<Record<string, number>>((acc, c) => {
+      acc[c.decision!] = (acc[c.decision!] || 0) + 1; return acc;
+    }, {})
+  ).map(([name, value]) => ({ name, value })), [cases]);
+
+  const severityDist = useMemo(() => Object.entries(
+    cases.reduce<Record<string, number>>((acc, c) => {
+      acc[c.severity] = (acc[c.severity] || 0) + 1; return acc;
+    }, {})
+  ).map(([name, value]) => ({ name, value })), [cases]);
+
+  const topRules = useMemo(() => [...rules].sort((a, b) => b.hitCount - a.hitCount).slice(0, 5), [rules]);
+  const recentMetrics = useMemo(() => metrics.slice(-14), [metrics]);
+
+  const isLoading = casesLoading || rulesLoading || metricsLoading;
 
   return (
     <AppLayout>
       <div className="p-6 lg:p-8 space-y-6">
-        {/* Header */}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-display-sm text-foreground">Dashboard</h1>
@@ -68,21 +76,18 @@ export default function Dashboard() {
           </div>
           <Badge variant="confidence" className="gap-1.5">
             <div className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
-            System Healthy
+            {isLoading ? 'Loading...' : 'System Healthy'}
           </Badge>
         </div>
 
-        {/* Metric Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <MetricCard icon={Activity} label="Total Processed" value={MOCK_CASES.length.toString()} change="+12%" color="bg-primary/10 text-primary" />
-          <MetricCard icon={CheckCircle2} label="Auto-Resolved" value={`${Math.round(resolved / MOCK_CASES.length * 100)}%`} change="+5%" color="bg-success/10 text-success" />
-          <MetricCard icon={AlertTriangle} label="Escalated" value={`${Math.round(escalated / MOCK_CASES.length * 100)}%`} color="bg-warning/10 text-warning" />
-          <MetricCard icon={TrendingUp} label="Avg Confidence" value={`${avgConf.toFixed(1)}%`} change="+2.3%" color="bg-info/10 text-info" />
+          <MetricCard icon={Activity} label="Total Processed" value={cases.length.toString()} change="+12%" color="bg-primary/10 text-primary" />
+          <MetricCard icon={CheckCircle2} label="Auto-Resolved" value={cases.length > 0 ? `${Math.round(resolved / cases.length * 100)}%` : '—'} change="+5%" color="bg-success/10 text-success" />
+          <MetricCard icon={AlertTriangle} label="Escalated" value={cases.length > 0 ? `${Math.round(escalated / cases.length * 100)}%` : '—'} color="bg-warning/10 text-warning" />
+          <MetricCard icon={TrendingUp} label="Avg Confidence" value={avgConf > 0 ? `${avgConf.toFixed(1)}%` : '—'} change="+2.3%" color="bg-info/10 text-info" />
         </div>
 
-        {/* Charts Row */}
         <div className="grid lg:grid-cols-3 gap-4">
-          {/* Throughput Chart */}
           <div className="lg:col-span-2 rounded-xl border border-border bg-gradient-card p-5">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-body-md font-semibold text-foreground">Processing Volume</h2>
@@ -100,7 +105,6 @@ export default function Dashboard() {
             </ResponsiveContainer>
           </div>
 
-          {/* Decision Distribution */}
           <div className="rounded-xl border border-border bg-gradient-card p-5">
             <h2 className="text-body-md font-semibold text-foreground mb-4">Decision Distribution</h2>
             <ResponsiveContainer width="100%" height={200}>
@@ -122,9 +126,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Bottom Row */}
         <div className="grid lg:grid-cols-3 gap-4">
-          {/* Confidence Trend */}
           <div className="lg:col-span-2 rounded-xl border border-border bg-gradient-card p-5">
             <h2 className="text-body-md font-semibold text-foreground mb-4">Confidence Trend</h2>
             <ResponsiveContainer width="100%" height={200}>
@@ -138,11 +140,10 @@ export default function Dashboard() {
             </ResponsiveContainer>
           </div>
 
-          {/* Top Rules */}
           <div className="rounded-xl border border-border bg-gradient-card p-5">
             <div className="flex items-center gap-2 mb-4">
               <Zap className="w-4 h-4 text-primary" />
-              <h2 className="text-body-md font-semibold text-foreground">Top Fired Rules</h2>
+              <h2 className="text-body-md font-semibold text-foreground">Top Rules</h2>
             </div>
             <div className="space-y-3">
               {topRules.map(rule => (
@@ -158,7 +159,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Severity Mix */}
         <div className="rounded-xl border border-border bg-gradient-card p-5">
           <div className="flex items-center gap-2 mb-4">
             <BarChart3 className="w-4 h-4 text-primary" />

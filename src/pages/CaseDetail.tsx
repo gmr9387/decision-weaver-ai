@@ -1,14 +1,14 @@
 import { useParams, Link } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { MOCK_CASES } from '@/lib/mock-data';
+import { useCaseDetail } from '@/hooks/use-data';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   ArrowLeft, AlertTriangle, CheckCircle2, Clock, Shield,
-  FileText, Zap, RotateCcw, Eye, BrainCircuit
+  FileText, Zap, RotateCcw, Eye, BrainCircuit, Loader2
 } from 'lucide-react';
-import type { DecisionType, SeverityLevel, ConfidenceBand } from '@/lib/types';
+import type { DecisionType, SeverityLevel } from '@/lib/types';
 
 const decisionIcons: Record<string, any> = {
   approve: CheckCircle2, deny: AlertTriangle, flag: Eye, escalate: ArrowLeft,
@@ -64,7 +64,17 @@ function ConfidenceBreakdownViz({ breakdown }: { breakdown: any }) {
 
 export default function CaseDetail() {
   const { id } = useParams();
-  const caseData = MOCK_CASES.find(c => c.id === id);
+  const { data: caseData, isLoading } = useCaseDetail(id);
+
+  if (isLoading) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center h-full">
+          <Loader2 className="w-8 h-8 text-primary animate-spin" />
+        </div>
+      </AppLayout>
+    );
+  }
 
   if (!caseData) {
     return (
@@ -118,7 +128,6 @@ export default function CaseDetail() {
           {/* Overview */}
           <TabsContent value="overview" className="space-y-4">
             <div className="grid lg:grid-cols-3 gap-4">
-              {/* Summary Card */}
               <div className="lg:col-span-2 rounded-xl border border-border bg-gradient-card p-6 space-y-4">
                 <h3 className="text-body-md font-semibold text-foreground flex items-center gap-2">
                   <DecIcon className="w-4 h-4 text-primary" /> Decision Summary
@@ -138,7 +147,6 @@ export default function CaseDetail() {
                 )}
               </div>
 
-              {/* Confidence Breakdown */}
               <div className="rounded-xl border border-border bg-gradient-card p-6">
                 <h3 className="text-body-md font-semibold text-foreground mb-4 flex items-center gap-2">
                   <Shield className="w-4 h-4 text-primary" /> Confidence
@@ -147,7 +155,6 @@ export default function CaseDetail() {
               </div>
             </div>
 
-            {/* Recommended Actions */}
             {ir && ir.recommendations.length > 0 && (
               <div className="rounded-xl border border-border bg-gradient-card p-6">
                 <h3 className="text-body-md font-semibold text-foreground mb-4 flex items-center gap-2">
@@ -171,7 +178,6 @@ export default function CaseDetail() {
               </div>
             )}
 
-            {/* Case Info */}
             <div className="grid md:grid-cols-2 gap-4">
               <div className="rounded-xl border border-border bg-gradient-card p-6">
                 <h3 className="text-body-md font-semibold text-foreground mb-4">Case Details</h3>
@@ -218,20 +224,24 @@ export default function CaseDetail() {
             <div className="grid lg:grid-cols-2 gap-4">
               <div className="rounded-xl border border-border bg-gradient-card p-6">
                 <h3 className="text-body-md font-semibold text-foreground mb-4">Normalized Facts</h3>
-                <div className="space-y-2">
-                  {caseData.facts.filter(f => f.quality !== 'missing').map(fact => (
-                    <div key={fact.key} className="flex items-center justify-between p-3 rounded-lg bg-surface-2">
-                      <div>
-                        <span className="text-body-sm font-medium text-foreground font-mono">{fact.key}</span>
-                        {fact.derived && <Badge variant="info" className="ml-2 text-caption">derived</Badge>}
+                {caseData.facts.length > 0 ? (
+                  <div className="space-y-2">
+                    {caseData.facts.filter(f => f.quality !== 'missing').map(fact => (
+                      <div key={fact.key} className="flex items-center justify-between p-3 rounded-lg bg-surface-2">
+                        <div>
+                          <span className="text-body-sm font-medium text-foreground font-mono">{fact.key}</span>
+                          {fact.derived && <Badge variant="info" className="ml-2 text-caption">derived</Badge>}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-body-sm text-foreground">{String(fact.value)}</span>
+                          <Badge variant={fact.quality === 'verified' ? 'success' : fact.quality === 'inferred' ? 'info' : 'warning'} className="capitalize text-caption">{fact.quality}</Badge>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-body-sm text-foreground">{String(fact.value)}</span>
-                        <Badge variant={fact.quality === 'verified' ? 'success' : fact.quality === 'inferred' ? 'info' : 'warning'} className="capitalize text-caption">{fact.quality}</Badge>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-body-sm text-muted-foreground">No facts recorded for this case yet.</p>
+                )}
               </div>
               <div className="space-y-4">
                 <div className="rounded-xl border border-border bg-gradient-card p-6">
@@ -300,8 +310,8 @@ export default function CaseDetail() {
 
           {/* Rules Trace */}
           <TabsContent value="rules" className="space-y-3">
-            {ir ? ir.firedRules.map(rule => (
-              <div key={rule.ruleId} className={`rounded-xl border p-5 ${rule.fired ? 'border-primary/30 bg-primary/5' : 'border-border bg-gradient-card'}`}>
+            {ir ? ir.firedRules.map((rule, idx) => (
+              <div key={rule.ruleId || idx} className={`rounded-xl border p-5 ${rule.fired ? 'border-primary/30 bg-primary/5' : 'border-border bg-gradient-card'}`}>
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
                     <Badge variant={rule.fired ? 'default' : 'secondary'}>{rule.fired ? 'Fired' : 'Not Fired'}</Badge>
