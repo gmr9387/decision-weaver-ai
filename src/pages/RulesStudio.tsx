@@ -17,8 +17,11 @@ const typeColors: Record<RuleType, string> = {
 };
 
 export default function RulesStudio() {
+  const { data: fetchedRules = [] } = useRules();
   const [search, setSearch] = useState('');
-  const [rules, setRules] = useState(MOCK_RULES);
+  const [rules, setRules] = useState(fetchedRules);
+
+  useEffect(() => { setRules(fetchedRules); }, [fetchedRules]);
   const [selectedRule, setSelectedRule] = useState<string | null>(null);
 
   const filtered = rules.filter(r =>
