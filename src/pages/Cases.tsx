@@ -5,8 +5,20 @@ import { useCases } from '@/hooks/use-data';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Search, Filter, ArrowUpDown, ChevronRight, Loader2 } from 'lucide-react';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter
+} from '@/components/ui/dialog';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu';
+import { Search, Filter, ArrowUpDown, ChevronRight, Loader2, Plus, MoreHorizontal } from 'lucide-react';
 import type { DecisionType, SeverityLevel } from '@/lib/types';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/use-auth';
+import { useToast } from '@/hooks/use-toast';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 const decisionColors: Record<DecisionType, string> = {
   approve: 'success', deny: 'destructive', flag: 'warning', escalate: 'critical',
@@ -16,6 +28,8 @@ const decisionColors: Record<DecisionType, string> = {
 const severityColors: Record<SeverityLevel, string> = {
   low: 'success', medium: 'warning', high: 'critical', critical: 'destructive',
 };
+
+const STATUS_OPTIONS = ['open', 'processing', 'resolved', 'escalated', 'pending_info'] as const;
 
 function ConfidenceBar({ value }: { value?: number }) {
   if (!value) return <span className="text-caption text-muted-foreground">—</span>;
@@ -32,11 +46,17 @@ function ConfidenceBar({ value }: { value?: number }) {
 
 export default function Cases() {
   const { data: allCases = [], isLoading } = useCases();
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
   const [search, setSearch] = useState('');
   const [sortField, setSortField] = useState<'createdAt' | 'confidence' | 'severity'>('createdAt');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [severityFilter, setSeverityFilter] = useState<string>('all');
   const [decisionFilter, setDecisionFilter] = useState<string>('all');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [newCase, setNewCase] = useState({ category: 'General', source: 'Manual Entry', severity: 'medium' as SeverityLevel, description: '', amount: '' });
 
   const filtered = useMemo(() => {
     let cases = [...allCases];
@@ -66,6 +86,48 @@ export default function Cases() {
     else { setSortField(field); setSortDir('desc'); }
   };
 
+  const getOrgId = async () => {
+    const { data } = await supabase.from('profiles').select('organization_id').eq('user_id', user!.id).single();
+    return data?.organization_id;
+  };
+
+  const createMutation = useMutation({
+    mutationFn: async () => {
+      const orgId = await getOrgId();
+      if (!orgId) throw new Error('No organization');
+      const caseNumber = `IC-${new Date().getFullYear()}-${String(allCases.length + 1001).padStart(4, '0')}`;
+      const { error } = await supabase.from('cases').insert({
+        organization_id: orgId,
+        case_number: caseNumber,
+        category: newCase.category,
+        source: newCase.source,
+        severity: newCase.severity as any,
+        description: newCase.description,
+        amount: newCase.amount ? parseFloat(newCase.amount) : null,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['cases'] });
+      setCreateOpen(false);
+      setNewCase({ category: 'General', source: 'Manual Entry', severity: 'medium', description: '', amount: '' });
+      toast({ title: 'Case created' });
+    },
+    onError: (err: any) => toast({ title: 'Error', description: err.message, variant: 'destructive' }),
+  });
+
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: string }) => {
+      const { error } = await supabase.from('cases').update({ status: status as any }).eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['cases'] });
+      toast({ title: 'Status updated' });
+    },
+    onError: (err: any) => toast({ title: 'Error', description: err.message, variant: 'destructive' }),
+  });
+
   return (
     <AppLayout>
       <div className="p-6 lg:p-8 space-y-5">
@@ -76,6 +138,9 @@ export default function Cases() {
               {isLoading ? 'Loading...' : `${allCases.length} total cases · ${filtered.length} shown`}
             </p>
           </div>
+          <Button variant="hero" size="sm" className="gap-1.5" onClick={() => setCreateOpen(true)}>
+            <Plus className="w-3.5 h-3.5" /> New Case
+          </Button>
         </div>
 
         {/* Filters */}
@@ -121,6 +186,7 @@ export default function Cases() {
                     <th className="text-left text-overline text-muted-foreground uppercase px-4 py-3 cursor-pointer" onClick={() => toggleSort('severity')}>
                       <span className="flex items-center gap-1">Severity <ArrowUpDown className="w-3 h-3" /></span>
                     </th>
+                    <th className="text-left text-overline text-muted-foreground uppercase px-4 py-3">Status</th>
                     <th className="text-left text-overline text-muted-foreground uppercase px-4 py-3">Decision</th>
                     <th className="text-left text-overline text-muted-foreground uppercase px-4 py-3 cursor-pointer" onClick={() => toggleSort('confidence')}>
                       <span className="flex items-center gap-1">Confidence <ArrowUpDown className="w-3 h-3" /></span>
@@ -144,6 +210,9 @@ export default function Cases() {
                         <Badge variant={severityColors[c.severity] as any} className="capitalize">{c.severity}</Badge>
                       </td>
                       <td className="px-4 py-3">
+                        <Badge variant="secondary" className="capitalize">{c.status.replace('_', ' ')}</Badge>
+                      </td>
+                      <td className="px-4 py-3">
                         {c.decision ? (
                           <Badge variant={decisionColors[c.decision] as any} className="capitalize">{c.decision.replace('_', ' ')}</Badge>
                         ) : (
@@ -154,11 +223,27 @@ export default function Cases() {
                       <td className="px-4 py-3 text-body-sm text-muted-foreground">{c.owner}</td>
                       <td className="px-4 py-3 text-caption text-muted-foreground">{new Date(c.createdAt).toLocaleDateString()}</td>
                       <td className="px-4 py-3">
-                        <Link to={`/cases/${c.id}`}>
-                          <Button variant="ghost" size="icon" className="w-7 h-7">
-                            <ChevronRight className="w-4 h-4" />
-                          </Button>
-                        </Link>
+                        <div className="flex items-center gap-1">
+                          <Link to={`/cases/${c.id}`}>
+                            <Button variant="ghost" size="icon" className="w-7 h-7">
+                              <ChevronRight className="w-4 h-4" />
+                            </Button>
+                          </Link>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="w-7 h-7">
+                                <MoreHorizontal className="w-4 h-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="bg-card border-border">
+                              {STATUS_OPTIONS.filter(s => s !== c.status).map(s => (
+                                <DropdownMenuItem key={s} onClick={() => updateStatusMutation.mutate({ id: c.id, status: s })} className="capitalize">
+                                  Set {s.replace('_', ' ')}
+                                </DropdownMenuItem>
+                              ))}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -168,6 +253,61 @@ export default function Cases() {
           )}
         </div>
       </div>
+
+      {/* Create Case Dialog */}
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="max-w-lg bg-card border-border">
+          <DialogHeader>
+            <DialogTitle className="text-foreground">Create New Case</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-muted-foreground">Category</Label>
+                <select value={newCase.category} onChange={e => setNewCase(f => ({ ...f, category: e.target.value }))} className="w-full bg-surface-2 border border-border rounded-md px-3 py-2 text-body-sm text-foreground">
+                  {['Authorization Review', 'Documentation Gap', 'Exception Handling', 'Compliance Check', 'Routing Decision', 'Risk Assessment', 'General'].map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-muted-foreground">Severity</Label>
+                <select value={newCase.severity} onChange={e => setNewCase(f => ({ ...f, severity: e.target.value as SeverityLevel }))} className="w-full bg-surface-2 border border-border rounded-md px-3 py-2 text-body-sm text-foreground">
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="critical">Critical</option>
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-muted-foreground">Source</Label>
+                <select value={newCase.source} onChange={e => setNewCase(f => ({ ...f, source: e.target.value }))} className="w-full bg-surface-2 border border-border rounded-md px-3 py-2 text-body-sm text-foreground">
+                  {['Manual Entry', 'Portal Submission', 'API Ingest', 'Batch Upload', 'Partner Feed'].map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-muted-foreground">Amount</Label>
+                <Input type="number" value={newCase.amount} onChange={e => setNewCase(f => ({ ...f, amount: e.target.value }))} className="bg-surface-2" placeholder="Optional" />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-muted-foreground">Description</Label>
+              <Textarea value={newCase.description} onChange={e => setNewCase(f => ({ ...f, description: e.target.value }))} className="bg-surface-2" rows={3} placeholder="Describe the case..." />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
+            <Button variant="hero" onClick={() => createMutation.mutate()} disabled={createMutation.isPending}>
+              {createMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+              Create Case
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

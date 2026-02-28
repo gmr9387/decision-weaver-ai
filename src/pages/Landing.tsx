@@ -44,10 +44,12 @@ export default function Landing() {
             <Link to="/dashboard" className="hover:text-foreground transition-colors">Product</Link>
           </nav>
           <div className="flex items-center gap-3">
-            <Link to="/dashboard">
-              <Button variant="hero-outline" size="sm">Explore Product</Button>
+            <Link to="/auth">
+              <Button variant="hero-outline" size="sm">Sign In</Button>
             </Link>
-            <Button variant="hero" size="sm">Book Demo</Button>
+            <Link to="/auth">
+              <Button variant="hero" size="sm">Get Started</Button>
+            </Link>
           </div>
         </div>
       </header>
