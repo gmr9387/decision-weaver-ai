@@ -1,10 +1,12 @@
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useCases, useRules, useMetrics } from '@/hooks/use-data';
+import { useSeedDemoData } from '@/hooks/use-actions';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { motion } from 'framer-motion';
 import {
   Activity, TrendingUp, AlertTriangle, CheckCircle2,
-  ArrowUpRight, Zap, BarChart3
+  ArrowUpRight, Zap, BarChart3, Database, Loader2
 } from 'lucide-react';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -41,6 +43,7 @@ export default function Dashboard() {
   const { data: cases = [], isLoading: casesLoading } = useCases();
   const { data: rules = [], isLoading: rulesLoading } = useRules();
   const { data: metrics = [], isLoading: metricsLoading } = useMetrics();
+  const seedData = useSeedDemoData();
 
   const resolved = useMemo(() => cases.filter(c => c.status === 'resolved').length, [cases]);
   const escalated = useMemo(() => cases.filter(c => c.status === 'escalated').length, [cases]);
@@ -65,6 +68,7 @@ export default function Dashboard() {
   const recentMetrics = useMemo(() => metrics.slice(-14), [metrics]);
 
   const isLoading = casesLoading || rulesLoading || metricsLoading;
+  const isEmpty = !isLoading && cases.length === 0 && rules.length === 0;
 
   return (
     <AppLayout>
@@ -80,102 +84,133 @@ export default function Dashboard() {
           </Badge>
         </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <MetricCard icon={Activity} label="Total Processed" value={cases.length.toString()} change="+12%" color="bg-primary/10 text-primary" />
-          <MetricCard icon={CheckCircle2} label="Auto-Resolved" value={cases.length > 0 ? `${Math.round(resolved / cases.length * 100)}%` : '—'} change="+5%" color="bg-success/10 text-success" />
-          <MetricCard icon={AlertTriangle} label="Escalated" value={cases.length > 0 ? `${Math.round(escalated / cases.length * 100)}%` : '—'} color="bg-warning/10 text-warning" />
-          <MetricCard icon={TrendingUp} label="Avg Confidence" value={avgConf > 0 ? `${avgConf.toFixed(1)}%` : '—'} change="+2.3%" color="bg-info/10 text-info" />
-        </div>
+        {/* Empty state with seed button */}
+        {isEmpty && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-xl border-2 border-dashed border-border bg-gradient-card p-12 text-center"
+          >
+            <Database className="w-12 h-12 text-muted-foreground/40 mx-auto mb-4" />
+            <h2 className="text-body-lg font-semibold text-foreground mb-2">Welcome to InferenceCore</h2>
+            <p className="text-body-sm text-muted-foreground mb-6 max-w-md mx-auto">
+              Your dashboard is empty. Load demo data to explore the platform with sample rules, cases, and metrics.
+            </p>
+            <Button
+              variant="hero"
+              className="gap-2"
+              onClick={() => seedData.mutate()}
+              disabled={seedData.isPending}
+            >
+              {seedData.isPending ? (
+                <><Loader2 className="w-4 h-4 animate-spin" /> Seeding...</>
+              ) : (
+                <><Database className="w-4 h-4" /> Load Demo Data</>
+              )}
+            </Button>
+          </motion.div>
+        )}
 
-        <div className="grid lg:grid-cols-3 gap-4">
-          <div className="lg:col-span-2 rounded-xl border border-border bg-gradient-card p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-body-md font-semibold text-foreground">Processing Volume</h2>
-              <Badge variant="secondary">Last 14 days</Badge>
+        {!isEmpty && (
+          <>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <MetricCard icon={Activity} label="Total Processed" value={cases.length.toString()} change="+12%" color="bg-primary/10 text-primary" />
+              <MetricCard icon={CheckCircle2} label="Auto-Resolved" value={cases.length > 0 ? `${Math.round(resolved / cases.length * 100)}%` : '—'} change="+5%" color="bg-success/10 text-success" />
+              <MetricCard icon={AlertTriangle} label="Escalated" value={cases.length > 0 ? `${Math.round(escalated / cases.length * 100)}%` : '—'} color="bg-warning/10 text-warning" />
+              <MetricCard icon={TrendingUp} label="Avg Confidence" value={avgConf > 0 ? `${avgConf.toFixed(1)}%` : '—'} change="+2.3%" color="bg-info/10 text-info" />
             </div>
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={recentMetrics}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(222, 15%, 14%)" />
-                <XAxis dataKey="date" tick={{ fill: 'hsl(215, 15%, 55%)', fontSize: 11 }} tickFormatter={v => v.slice(5)} />
-                <YAxis tick={{ fill: 'hsl(215, 15%, 55%)', fontSize: 11 }} />
-                <Tooltip contentStyle={{ background: 'hsl(222, 20%, 10%)', border: '1px solid hsl(222, 15%, 18%)', borderRadius: 8, fontSize: 12 }} />
-                <Bar dataKey="autoResolved" name="Auto-Resolved" fill="hsl(185, 85%, 48%)" radius={[3, 3, 0, 0]} />
-                <Bar dataKey="escalated" name="Escalated" fill="hsl(38, 92%, 50%)" radius={[3, 3, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
 
-          <div className="rounded-xl border border-border bg-gradient-card p-5">
-            <h2 className="text-body-md font-semibold text-foreground mb-4">Decision Distribution</h2>
-            <ResponsiveContainer width="100%" height={200}>
-              <PieChart>
-                <Pie data={decisionDist} cx="50%" cy="50%" innerRadius={55} outerRadius={80} dataKey="value" paddingAngle={3}>
-                  {decisionDist.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
-                </Pie>
-                <Tooltip contentStyle={{ background: 'hsl(222, 20%, 10%)', border: '1px solid hsl(222, 15%, 18%)', borderRadius: 8, fontSize: 12 }} />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="flex flex-wrap gap-2 mt-2">
-              {decisionDist.slice(0, 5).map((d, i) => (
-                <span key={d.name} className="flex items-center gap-1.5 text-caption text-muted-foreground">
-                  <span className="w-2 h-2 rounded-full" style={{ background: CHART_COLORS[i] }} />
-                  {d.name}
-                </span>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="grid lg:grid-cols-3 gap-4">
-          <div className="lg:col-span-2 rounded-xl border border-border bg-gradient-card p-5">
-            <h2 className="text-body-md font-semibold text-foreground mb-4">Confidence Trend</h2>
-            <ResponsiveContainer width="100%" height={200}>
-              <LineChart data={recentMetrics}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(222, 15%, 14%)" />
-                <XAxis dataKey="date" tick={{ fill: 'hsl(215, 15%, 55%)', fontSize: 11 }} tickFormatter={v => v.slice(5)} />
-                <YAxis domain={[50, 100]} tick={{ fill: 'hsl(215, 15%, 55%)', fontSize: 11 }} />
-                <Tooltip contentStyle={{ background: 'hsl(222, 20%, 10%)', border: '1px solid hsl(222, 15%, 18%)', borderRadius: 8, fontSize: 12 }} />
-                <Line type="monotone" dataKey="avgConfidence" stroke="hsl(185, 85%, 48%)" strokeWidth={2} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-
-          <div className="rounded-xl border border-border bg-gradient-card p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <Zap className="w-4 h-4 text-primary" />
-              <h2 className="text-body-md font-semibold text-foreground">Top Rules</h2>
-            </div>
-            <div className="space-y-3">
-              {topRules.map(rule => (
-                <div key={rule.id} className="flex items-center justify-between">
-                  <div>
-                    <div className="text-body-sm text-foreground">{rule.name}</div>
-                    <div className="text-caption text-muted-foreground">{rule.category}</div>
-                  </div>
-                  <Badge variant="secondary" className="font-mono text-caption">{rule.hitCount}</Badge>
+            <div className="grid lg:grid-cols-3 gap-4">
+              <div className="lg:col-span-2 rounded-xl border border-border bg-gradient-card p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-body-md font-semibold text-foreground">Processing Volume</h2>
+                  <Badge variant="secondary">Last 14 days</Badge>
                 </div>
-              ))}
-            </div>
-          </div>
-        </div>
+                <ResponsiveContainer width="100%" height={260}>
+                  <BarChart data={recentMetrics}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(222, 15%, 14%)" />
+                    <XAxis dataKey="date" tick={{ fill: 'hsl(215, 15%, 55%)', fontSize: 11 }} tickFormatter={v => v.slice(5)} />
+                    <YAxis tick={{ fill: 'hsl(215, 15%, 55%)', fontSize: 11 }} />
+                    <Tooltip contentStyle={{ background: 'hsl(222, 20%, 10%)', border: '1px solid hsl(222, 15%, 18%)', borderRadius: 8, fontSize: 12 }} />
+                    <Bar dataKey="autoResolved" name="Auto-Resolved" fill="hsl(185, 85%, 48%)" radius={[3, 3, 0, 0]} />
+                    <Bar dataKey="escalated" name="Escalated" fill="hsl(38, 92%, 50%)" radius={[3, 3, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
 
-        <div className="rounded-xl border border-border bg-gradient-card p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <BarChart3 className="w-4 h-4 text-primary" />
-            <h2 className="text-body-md font-semibold text-foreground">Severity Distribution</h2>
-          </div>
-          <div className="grid grid-cols-4 gap-4">
-            {severityDist.map(s => {
-              const colors: Record<string, string> = { low: 'text-severity-low', medium: 'text-severity-medium', high: 'text-severity-high', critical: 'text-severity-critical' };
-              return (
-                <div key={s.name} className="text-center p-4 rounded-lg bg-surface-2">
-                  <div className={`text-display-sm ${colors[s.name] || 'text-foreground'}`}>{s.value}</div>
-                  <div className="text-caption text-muted-foreground capitalize mt-1">{s.name}</div>
+              <div className="rounded-xl border border-border bg-gradient-card p-5">
+                <h2 className="text-body-md font-semibold text-foreground mb-4">Decision Distribution</h2>
+                <ResponsiveContainer width="100%" height={200}>
+                  <PieChart>
+                    <Pie data={decisionDist} cx="50%" cy="50%" innerRadius={55} outerRadius={80} dataKey="value" paddingAngle={3}>
+                      {decisionDist.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+                    </Pie>
+                    <Tooltip contentStyle={{ background: 'hsl(222, 20%, 10%)', border: '1px solid hsl(222, 15%, 18%)', borderRadius: 8, fontSize: 12 }} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {decisionDist.slice(0, 5).map((d, i) => (
+                    <span key={d.name} className="flex items-center gap-1.5 text-caption text-muted-foreground">
+                      <span className="w-2 h-2 rounded-full" style={{ background: CHART_COLORS[i] }} />
+                      {d.name}
+                    </span>
+                  ))}
                 </div>
-              );
-            })}
-          </div>
-        </div>
+              </div>
+            </div>
+
+            <div className="grid lg:grid-cols-3 gap-4">
+              <div className="lg:col-span-2 rounded-xl border border-border bg-gradient-card p-5">
+                <h2 className="text-body-md font-semibold text-foreground mb-4">Confidence Trend</h2>
+                <ResponsiveContainer width="100%" height={200}>
+                  <LineChart data={recentMetrics}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(222, 15%, 14%)" />
+                    <XAxis dataKey="date" tick={{ fill: 'hsl(215, 15%, 55%)', fontSize: 11 }} tickFormatter={v => v.slice(5)} />
+                    <YAxis domain={[50, 100]} tick={{ fill: 'hsl(215, 15%, 55%)', fontSize: 11 }} />
+                    <Tooltip contentStyle={{ background: 'hsl(222, 20%, 10%)', border: '1px solid hsl(222, 15%, 18%)', borderRadius: 8, fontSize: 12 }} />
+                    <Line type="monotone" dataKey="avgConfidence" stroke="hsl(185, 85%, 48%)" strokeWidth={2} dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+
+              <div className="rounded-xl border border-border bg-gradient-card p-5">
+                <div className="flex items-center gap-2 mb-4">
+                  <Zap className="w-4 h-4 text-primary" />
+                  <h2 className="text-body-md font-semibold text-foreground">Top Rules</h2>
+                </div>
+                <div className="space-y-3">
+                  {topRules.map(rule => (
+                    <div key={rule.id} className="flex items-center justify-between">
+                      <div>
+                        <div className="text-body-sm text-foreground">{rule.name}</div>
+                        <div className="text-caption text-muted-foreground">{rule.category}</div>
+                      </div>
+                      <Badge variant="secondary" className="font-mono text-caption">{rule.hitCount}</Badge>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-border bg-gradient-card p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <BarChart3 className="w-4 h-4 text-primary" />
+                <h2 className="text-body-md font-semibold text-foreground">Severity Distribution</h2>
+              </div>
+              <div className="grid grid-cols-4 gap-4">
+                {severityDist.map(s => {
+                  const colors: Record<string, string> = { low: 'text-severity-low', medium: 'text-severity-medium', high: 'text-severity-high', critical: 'text-severity-critical' };
+                  return (
+                    <div key={s.name} className="text-center p-4 rounded-lg bg-surface-2">
+                      <div className={`text-display-sm ${colors[s.name] || 'text-foreground'}`}>{s.value}</div>
+                      <div className="text-caption text-muted-foreground capitalize mt-1">{s.name}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </AppLayout>
   );

@@ -74,7 +74,7 @@ function dbRuleToRule(row: Tables<'rules'>): Rule {
     explanationTemplate: row.explanation_template || '',
     version: row.version,
     lastModified: row.updated_at.split('T')[0],
-    hitCount: 0, // computed separately
+    hitCount: (row as any).hit_count || 0,
   };
 }
 
