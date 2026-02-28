@@ -312,7 +312,9 @@ Deno.serve(async (req) => {
 
       // Increment hit_count for fired rules
       for (const ruleId of firedRuleIds) {
-        await supabase.rpc("increment_rule_hit_count" as any, { rule_id: ruleId }).catch(() => {});
+        try {
+          await supabase.rpc("increment_rule_hit_count" as any, { rule_id: ruleId });
+        } catch { /* ignore */ }
       }
     }
 
