@@ -5,6 +5,9 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
+import {
   FlaskConical, ArrowRight, AlertTriangle, CheckCircle2,
   Loader2, ChevronDown, ChevronRight as ChevronRightIcon, Zap
 } from 'lucide-react';
@@ -15,9 +18,10 @@ import { useToast } from '@/hooks/use-toast';
 export default function SimulationLab() {
   const { data: cases = [] } = useCases();
   const { data: rules = [] } = useRules();
-  const defaultCase = useMemo(() => cases.find(c => c.inferenceResult) || cases[0], [cases]);
-  const [selectedCase, setSelectedCase] = useState<Case | undefined>(undefined);
-  const activeCase = selectedCase || defaultCase;
+  const casesWithFacts = useMemo(() => cases.filter(c => c.facts.length > 0), [cases]);
+  const defaultCase = useMemo(() => casesWithFacts.find(c => c.inferenceResult) || casesWithFacts[0], [casesWithFacts]);
+  const [selectedCaseId, setSelectedCaseId] = useState<string | undefined>(undefined);
+  const activeCase = selectedCaseId ? cases.find(c => c.id === selectedCaseId) || defaultCase : defaultCase;
   const [factOverrides, setFactOverrides] = useState<Record<string, string>>({});
   const [simResult, setSimResult] = useState<InferenceResult | null>(null);
   const [running, setRunning] = useState(false);
@@ -98,9 +102,19 @@ export default function SimulationLab() {
         <div className="grid lg:grid-cols-2 gap-6">
           {/* Facts Editor */}
           <div className="rounded-xl border border-border bg-gradient-card p-6">
-            <h3 className="text-body-md font-semibold text-foreground mb-4">
-              Facts — {activeCase.caseNumber}
-            </h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-body-md font-semibold text-foreground">Simulate Case</h3>
+              <Select value={activeCase.id} onValueChange={id => { setSelectedCaseId(id); setFactOverrides({}); setSimResult(null); }}>
+                <SelectTrigger className="w-48 h-8 bg-surface-2 border-border text-body-sm">
+                  <SelectValue placeholder="Select case" />
+                </SelectTrigger>
+                <SelectContent>
+                  {casesWithFacts.map(c => (
+                    <SelectItem key={c.id} value={c.id}>{c.caseNumber} — {c.category}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <p className="text-caption text-muted-foreground mb-4">Modify values to simulate different outcomes</p>
             {activeCase.facts.length === 0 ? (
               <p className="text-body-sm text-muted-foreground italic">
