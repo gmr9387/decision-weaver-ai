@@ -1,8 +1,5 @@
 project_id = "avcsczjzociyodulwcui"
 
-[functions.run-simulation]
-verify_jwt = false
-
 [functions.run-inference]
 verify_jwt = false
 

@@ -5,15 +5,19 @@ import { useCaseDetail } from '@/hooks/use-data';
 import { useRunInference } from '@/hooks/use-actions';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import {
   ArrowLeft, AlertTriangle, CheckCircle2, Clock, Shield,
-  FileText, Zap, RotateCcw, BrainCircuit, Loader2, Play
+  FileText, Zap, RotateCcw, BrainCircuit, Loader2, Play, Plus, Trash2
 } from 'lucide-react';
 import type { DecisionType, SeverityLevel, InferenceMode } from '@/lib/types';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 const decisionIcons: Record<string, any> = {
   approve: CheckCircle2, deny: AlertTriangle, flag: BrainCircuit, escalate: ArrowLeft,
@@ -43,16 +47,16 @@ function ConfidenceBreakdownViz({ breakdown }: { breakdown: any }) {
     <div className="space-y-3">
       {items.map(item => (
         <div key={item.label}>
-          <div className="flex items-center justify-between mb-1">
+    <div className="flex items-center justify-between mb-1">
             <span className="text-body-sm text-muted-foreground">{item.label}</span>
             <span className="text-caption font-mono text-foreground">
-              {item.negative && item.value < 0 ? '' : '+'}{(item.value * 100).toFixed(0)}%
+              {item.negative ? '-' : '+'}{Math.abs(item.value).toFixed(0)}
             </span>
           </div>
           <div className="w-full h-1.5 rounded-full bg-surface-3">
             <div
               className={`h-full rounded-full ${item.color} transition-all`}
-              style={{ width: `${Math.abs(item.value) * 100}%` }}
+              style={{ width: `${Math.min(100, Math.abs(item.value))}%` }}
             />
           </div>
         </div>
@@ -60,7 +64,7 @@ function ConfidenceBreakdownViz({ breakdown }: { breakdown: any }) {
       <div className="pt-3 border-t border-border flex items-center justify-between">
         <span className="text-body-sm font-semibold text-foreground">Final Adjusted</span>
         <span className="text-body-md font-semibold text-primary font-mono">
-          {(breakdown.finalAdjusted * 100).toFixed(1)}%
+          {breakdown.finalAdjusted.toFixed(1)}%
         </span>
       </div>
     </div>
@@ -72,6 +76,37 @@ export default function CaseDetail() {
   const { data: caseData, isLoading } = useCaseDetail(id);
   const runInference = useRunInference();
   const [inferenceMode, setInferenceMode] = useState<InferenceMode>('instant');
+  const [newFactKey, setNewFactKey] = useState('');
+  const [newFactValue, setNewFactValue] = useState('');
+  const [newFactSource, setNewFactSource] = useState('Manual');
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const addFactMutation = useMutation({
+    mutationFn: async () => {
+      if (!id || !newFactKey.trim()) throw new Error('Fact key is required');
+      let parsedValue: any = newFactValue;
+      if (!isNaN(Number(newFactValue)) && newFactValue.trim() !== '') parsedValue = Number(newFactValue);
+      else if (newFactValue === 'true') parsedValue = true;
+      else if (newFactValue === 'false') parsedValue = false;
+
+      const { error } = await supabase.from('case_facts').insert({
+        case_id: id,
+        fact_key: newFactKey.trim(),
+        fact_value: parsedValue,
+        source: newFactSource,
+        quality: 'unverified',
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['case', id] });
+      setNewFactKey('');
+      setNewFactValue('');
+      toast({ title: 'Fact added' });
+    },
+    onError: (err: any) => toast({ title: 'Error', description: err.message, variant: 'destructive' }),
+  });
 
   const handleRunInference = () => {
     if (!caseData || !id) return;
@@ -286,8 +321,32 @@ export default function CaseDetail() {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-body-sm text-muted-foreground">No facts recorded for this case yet.</p>
+                  <p className="text-body-sm text-muted-foreground">No facts recorded for this case yet. Add facts below to enable inference.</p>
                 )}
+                {/* Add fact form */}
+                <div className="mt-4 pt-4 border-t border-border space-y-3">
+                  <h4 className="text-body-sm font-semibold text-foreground flex items-center gap-1.5">
+                    <Plus className="w-3.5 h-3.5" /> Add Fact
+                  </h4>
+                  <div className="flex gap-2 items-end">
+                    <div className="flex-1 space-y-1">
+                      <span className="text-caption text-muted-foreground">Key</span>
+                      <Input value={newFactKey} onChange={e => setNewFactKey(e.target.value)} placeholder="e.g. amount_requested" className="bg-surface-3 h-8 text-body-sm font-mono" />
+                    </div>
+                    <div className="flex-1 space-y-1">
+                      <span className="text-caption text-muted-foreground">Value</span>
+                      <Input value={newFactValue} onChange={e => setNewFactValue(e.target.value)} placeholder="e.g. 25000" className="bg-surface-3 h-8 text-body-sm" />
+                    </div>
+                    <div className="w-24 space-y-1">
+                      <span className="text-caption text-muted-foreground">Source</span>
+                      <Input value={newFactSource} onChange={e => setNewFactSource(e.target.value)} className="bg-surface-3 h-8 text-body-sm" />
+                    </div>
+                    <Button size="sm" variant="hero" className="h-8 gap-1" onClick={() => addFactMutation.mutate()} disabled={addFactMutation.isPending || !newFactKey.trim()}>
+                      {addFactMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+                      Add
+                    </Button>
+                  </div>
+                </div>
               </div>
               <div className="space-y-4">
                 <div className="rounded-xl border border-border bg-gradient-card p-6">
@@ -385,7 +444,7 @@ export default function CaseDetail() {
                   <div>
                     <span className="text-muted-foreground">Confidence Impact: </span>
                     <span className={`font-mono ${rule.confidenceImpact >= 0 ? 'text-success' : 'text-destructive'}`}>
-                      {rule.confidenceImpact >= 0 ? '+' : ''}{(rule.confidenceImpact * 100).toFixed(0)}%
+                      {rule.confidenceImpact >= 0 ? '+' : ''}{rule.confidenceImpact}
                     </span>
                   </div>
                 </div>

@@ -238,7 +238,7 @@ export default function RulesStudio() {
                       ['Priority', selected.priority.toString()],
                       ['Version', `v${selected.version}`],
                       ['Last Modified', selected.lastModified],
-                      ['Confidence Impact', `${selected.confidenceImpact >= 0 ? '+' : ''}${(selected.confidenceImpact * 100).toFixed(0)}%`],
+                      ['Confidence Impact', `${selected.confidenceImpact >= 0 ? '+' : ''}${selected.confidenceImpact}`],
                       ['Status', selected.enabled ? 'Enabled' : 'Disabled'],
                     ].map(([label, value]) => (
                       <div key={label} className="flex items-center justify-between">
@@ -314,12 +314,14 @@ export default function RulesStudio() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label className="text-muted-foreground">Conditions</Label>
-              <Textarea value={form.conditions} onChange={e => setForm(f => ({ ...f, conditions: e.target.value }))} className="bg-surface-2 font-mono text-body-sm" rows={2} placeholder="e.g. amount > 25000" />
+              <Label className="text-muted-foreground">Conditions (JSON)</Label>
+              <Textarea value={form.conditions} onChange={e => setForm(f => ({ ...f, conditions: e.target.value }))} className="bg-surface-2 font-mono text-body-sm" rows={3} placeholder='{"all": [{"fact": "amount", "operator": "greaterThan", "value": 25000}]}' />
+              {form.conditions && (() => { try { JSON.parse(form.conditions); return null; } catch { return <p className="text-caption text-destructive">Invalid JSON</p>; } })()}
             </div>
             <div className="space-y-2">
-              <Label className="text-muted-foreground">Output</Label>
-              <Textarea value={form.output} onChange={e => setForm(f => ({ ...f, output: e.target.value }))} className="bg-surface-2 font-mono text-body-sm" rows={2} placeholder="e.g. flag_for_review" />
+              <Label className="text-muted-foreground">Output (JSON)</Label>
+              <Textarea value={form.output} onChange={e => setForm(f => ({ ...f, output: e.target.value }))} className="bg-surface-2 font-mono text-body-sm" rows={2} placeholder='{"decision": "flag", "evidence": "POLICY-001"}' />
+              {form.output && (() => { try { JSON.parse(form.output); return null; } catch { return <p className="text-caption text-destructive">Invalid JSON</p>; } })()}
             </div>
             <div className="space-y-2">
               <Label className="text-muted-foreground">Explanation Template</Label>
@@ -332,7 +334,7 @@ export default function RulesStudio() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-            <Button variant="hero" onClick={() => saveMutation.mutate({ ...form, id: editingId || undefined })} disabled={saveMutation.isPending || !form.name}>
+            <Button variant="hero" onClick={() => saveMutation.mutate({ ...form, id: editingId || undefined })} disabled={saveMutation.isPending || !form.name || (!!form.conditions && (() => { try { JSON.parse(form.conditions); return false; } catch { return true; } })()) || (!!form.output && (() => { try { JSON.parse(form.output); return false; } catch { return true; } })())}>
               {saveMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
               {editingId ? 'Update' : 'Create'}
             </Button>

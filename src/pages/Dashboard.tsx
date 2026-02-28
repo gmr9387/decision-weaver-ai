@@ -114,10 +114,10 @@ export default function Dashboard() {
         {!isEmpty && (
           <>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <MetricCard icon={Activity} label="Total Processed" value={cases.length.toString()} change="+12%" color="bg-primary/10 text-primary" />
-              <MetricCard icon={CheckCircle2} label="Auto-Resolved" value={cases.length > 0 ? `${Math.round(resolved / cases.length * 100)}%` : '—'} change="+5%" color="bg-success/10 text-success" />
+              <MetricCard icon={Activity} label="Total Processed" value={cases.length.toString()} color="bg-primary/10 text-primary" />
+              <MetricCard icon={CheckCircle2} label="Auto-Resolved" value={cases.length > 0 ? `${Math.round(resolved / cases.length * 100)}%` : '—'} color="bg-success/10 text-success" />
               <MetricCard icon={AlertTriangle} label="Escalated" value={cases.length > 0 ? `${Math.round(escalated / cases.length * 100)}%` : '—'} color="bg-warning/10 text-warning" />
-              <MetricCard icon={TrendingUp} label="Avg Confidence" value={avgConf > 0 ? `${avgConf.toFixed(1)}%` : '—'} change="+2.3%" color="bg-info/10 text-info" />
+              <MetricCard icon={TrendingUp} label="Avg Confidence" value={avgConf > 0 ? `${avgConf.toFixed(1)}%` : '—'} color="bg-info/10 text-info" />
             </div>
 
             <div className="grid lg:grid-cols-3 gap-4">
