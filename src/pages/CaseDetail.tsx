@@ -1,18 +1,23 @@
+import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useCaseDetail } from '@/hooks/use-data';
+import { useRunInference } from '@/hooks/use-actions';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
+import {
   ArrowLeft, AlertTriangle, CheckCircle2, Clock, Shield,
-  FileText, Zap, RotateCcw, Eye, BrainCircuit, Loader2
+  FileText, Zap, RotateCcw, BrainCircuit, Loader2, Play
 } from 'lucide-react';
-import type { DecisionType, SeverityLevel } from '@/lib/types';
+import type { DecisionType, SeverityLevel, InferenceMode } from '@/lib/types';
 
 const decisionIcons: Record<string, any> = {
-  approve: CheckCircle2, deny: AlertTriangle, flag: Eye, escalate: ArrowLeft,
-  review: FileText, request_info: FileText, route: Zap, monitor: Eye, unresolved: Clock,
+  approve: CheckCircle2, deny: AlertTriangle, flag: BrainCircuit, escalate: ArrowLeft,
+  review: FileText, request_info: FileText, route: Zap, monitor: BrainCircuit, unresolved: Clock,
 };
 
 const decisionColors: Record<DecisionType, string> = {
@@ -65,6 +70,17 @@ function ConfidenceBreakdownViz({ breakdown }: { breakdown: any }) {
 export default function CaseDetail() {
   const { id } = useParams();
   const { data: caseData, isLoading } = useCaseDetail(id);
+  const runInference = useRunInference();
+  const [inferenceMode, setInferenceMode] = useState<InferenceMode>('instant');
+
+  const handleRunInference = () => {
+    if (!caseData || !id) return;
+    const factsMap: Record<string, unknown> = {};
+    for (const f of caseData.facts) {
+      factsMap[f.key] = f.value;
+    }
+    runInference.mutate({ caseId: id, facts: factsMap, mode: inferenceMode });
+  };
 
   if (isLoading) {
     return (
@@ -109,9 +125,33 @@ export default function CaseDetail() {
             </div>
             <p className="text-body-sm text-muted-foreground">{caseData.category} · {caseData.source} · {caseData.owner}</p>
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" className="gap-1.5"><RotateCcw className="w-3 h-3" /> Replay</Button>
-            <Button variant="outline" size="sm" className="gap-1.5"><BrainCircuit className="w-3 h-3" /> Re-run</Button>
+          <div className="flex gap-2 items-center">
+            <Select value={inferenceMode} onValueChange={v => setInferenceMode(v as InferenceMode)}>
+              <SelectTrigger className="w-32 h-9 bg-surface-2 border-border text-body-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="instant">Instant</SelectItem>
+                <SelectItem value="deep">Deep</SelectItem>
+                <SelectItem value="assisted">AI Assisted</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              variant="hero"
+              size="sm"
+              className="gap-1.5"
+              onClick={handleRunInference}
+              disabled={runInference.isPending || caseData.facts.length === 0}
+            >
+              {runInference.isPending ? (
+                <><Loader2 className="w-3 h-3 animate-spin" /> Running...</>
+              ) : (
+                <><Play className="w-3 h-3" /> Run Inference</>
+              )}
+            </Button>
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={handleRunInference} disabled={runInference.isPending}>
+              <RotateCcw className="w-3 h-3" /> Re-run
+            </Button>
           </div>
         </div>
 
@@ -135,7 +175,7 @@ export default function CaseDetail() {
                 {ir ? (
                   <>
                     <p className="text-body-sm text-muted-foreground">{ir.explanation}</p>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <Badge variant="secondary">Mode: {ir.mode}</Badge>
                       <Badge variant="secondary">{ir.firedRules.filter(r => r.fired).length} rules fired</Badge>
                       {ir.missingFacts.length > 0 && <Badge variant="warning">{ir.missingFacts.length} missing facts</Badge>}
@@ -143,7 +183,13 @@ export default function CaseDetail() {
                     </div>
                   </>
                 ) : (
-                  <p className="text-body-sm text-muted-foreground">Inference has not been run for this case yet.</p>
+                  <div className="space-y-3">
+                    <p className="text-body-sm text-muted-foreground">Inference has not been run for this case yet.</p>
+                    <Button variant="hero" size="sm" className="gap-1.5" onClick={handleRunInference} disabled={runInference.isPending || caseData.facts.length === 0}>
+                      {runInference.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}
+                      Run Inference Now
+                    </Button>
+                  </div>
                 )}
               </div>
 

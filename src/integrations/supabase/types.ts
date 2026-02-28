@@ -437,6 +437,7 @@ export type Database = {
           effective_to: string | null
           enabled: boolean
           explanation_template: string | null
+          hit_count: number
           id: string
           name: string
           organization_id: string
@@ -456,6 +457,7 @@ export type Database = {
           effective_to?: string | null
           enabled?: boolean
           explanation_template?: string | null
+          hit_count?: number
           id?: string
           name: string
           organization_id: string
@@ -475,6 +477,7 @@ export type Database = {
           effective_to?: string | null
           enabled?: boolean
           explanation_template?: string | null
+          hit_count?: number
           id?: string
           name?: string
           organization_id?: string
@@ -524,6 +527,10 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      increment_rule_hit_count: {
+        Args: { rule_id: string }
+        Returns: undefined
       }
     }
     Enums: {

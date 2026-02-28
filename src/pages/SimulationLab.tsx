@@ -60,8 +60,8 @@ export default function SimulationLab() {
           : fact.value;
       }
 
-      const { data, error } = await supabase.functions.invoke('run-simulation', {
-        body: { facts: mergedFacts, mode: 'instant' },
+      const { data, error } = await supabase.functions.invoke('run-inference', {
+        body: { facts: mergedFacts, mode: 'instant', persist: false },
       });
 
       if (error) throw error;
