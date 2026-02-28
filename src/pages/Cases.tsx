@@ -13,8 +13,9 @@ import {
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
-import { Search, Filter, ArrowUpDown, ChevronRight, Loader2, Plus, MoreHorizontal } from 'lucide-react';
+import { Search, Filter, ArrowUpDown, ChevronRight, Loader2, Plus, MoreHorizontal, Play, ChevronLeft } from 'lucide-react';
 import type { DecisionType, SeverityLevel } from '@/lib/types';
+import { useRunInference } from '@/hooks/use-actions';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
@@ -50,6 +51,8 @@ export default function Cases() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
+  const runInference = useRunInference();
+
   const [search, setSearch] = useState('');
   const [sortField, setSortField] = useState<'createdAt' | 'confidence' | 'severity'>('createdAt');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -57,6 +60,9 @@ export default function Cases() {
   const [decisionFilter, setDecisionFilter] = useState<string>('all');
   const [createOpen, setCreateOpen] = useState(false);
   const [newCase, setNewCase] = useState({ category: 'General', source: 'Manual Entry', severity: 'medium' as SeverityLevel, description: '', amount: '' });
+  const [page, setPage] = useState(0);
+  const [pageSize] = useState(20);
+  const [batchRunning, setBatchRunning] = useState(false);
 
   const filtered = useMemo(() => {
     let cases = [...allCases];
@@ -86,9 +92,37 @@ export default function Cases() {
     else { setSortField(field); setSortDir('desc'); }
   };
 
+  // Reset page when filters change
+  const totalPages = Math.ceil(filtered.length / pageSize);
+  const paged = filtered.slice(page * pageSize, (page + 1) * pageSize);
+
   const getOrgId = async () => {
     const { data } = await supabase.from('profiles').select('organization_id').eq('user_id', user!.id).single();
     return data?.organization_id;
+  };
+
+  const handleBatchInference = async () => {
+    const openCases = filtered.filter(c => c.status === 'open' || c.status === 'processing');
+    if (openCases.length === 0) {
+      toast({ title: 'No eligible cases', description: 'No open/processing cases to run inference on.' });
+      return;
+    }
+    setBatchRunning(true);
+    let success = 0;
+    let failed = 0;
+    for (const c of openCases) {
+      try {
+        const factsObj: Record<string, unknown> = {};
+        c.facts?.forEach(f => { factsObj[f.key] = f.value; });
+        await runInference.mutateAsync({ caseId: c.id, facts: factsObj, mode: 'instant' });
+        success++;
+      } catch {
+        failed++;
+      }
+    }
+    setBatchRunning(false);
+    queryClient.invalidateQueries({ queryKey: ['cases'] });
+    toast({ title: 'Batch complete', description: `${success} processed, ${failed} failed out of ${openCases.length} cases.` });
   };
 
   const createMutation = useMutation({
@@ -138,9 +172,15 @@ export default function Cases() {
               {isLoading ? 'Loading...' : `${allCases.length} total cases · ${filtered.length} shown`}
             </p>
           </div>
-          <Button variant="hero" size="sm" className="gap-1.5" onClick={() => setCreateOpen(true)}>
-            <Plus className="w-3.5 h-3.5" /> New Case
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={handleBatchInference} disabled={batchRunning}>
+              {batchRunning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+              Batch Inference
+            </Button>
+            <Button variant="hero" size="sm" className="gap-1.5" onClick={() => setCreateOpen(true)}>
+              <Plus className="w-3.5 h-3.5" /> New Case
+            </Button>
+          </div>
         </div>
 
         {/* Filters */}
@@ -199,7 +239,7 @@ export default function Cases() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.slice(0, 50).map(c => (
+                  {paged.map(c => (
                     <tr key={c.id} className="border-b border-border/50 hover:bg-surface-hover transition-colors">
                       <td className="px-4 py-3">
                         <div className="text-body-sm font-medium text-foreground">{c.caseNumber}</div>
@@ -249,6 +289,31 @@ export default function Cases() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t border-border">
+              <span className="text-caption text-muted-foreground">
+                Showing {page * pageSize + 1}–{Math.min((page + 1) * pageSize, filtered.length)} of {filtered.length}
+              </span>
+              <div className="flex items-center gap-1">
+                <Button variant="ghost" size="icon" className="w-8 h-8" disabled={page === 0} onClick={() => setPage(p => p - 1)}>
+                  <ChevronLeft className="w-4 h-4" />
+                </Button>
+                {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                  const p = totalPages <= 5 ? i : Math.max(0, Math.min(page - 2, totalPages - 5)) + i;
+                  return (
+                    <Button key={p} variant={p === page ? "default" : "ghost"} size="icon" className="w-8 h-8 text-caption" onClick={() => setPage(p)}>
+                      {p + 1}
+                    </Button>
+                  );
+                })}
+                <Button variant="ghost" size="icon" className="w-8 h-8" disabled={page >= totalPages - 1} onClick={() => setPage(p => p + 1)}>
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+              </div>
             </div>
           )}
         </div>
