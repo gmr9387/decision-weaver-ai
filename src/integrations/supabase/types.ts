@@ -565,6 +565,47 @@ export type Database = {
         }
         Relationships: []
       }
+      webhooks: {
+        Row: {
+          created_at: string
+          description: string | null
+          enabled: boolean
+          id: string
+          organization_id: string
+          signing_secret: string | null
+          updated_at: string
+          url: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          enabled?: boolean
+          id?: string
+          organization_id: string
+          signing_secret?: string | null
+          updated_at?: string
+          url: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          enabled?: boolean
+          id?: string
+          organization_id?: string
+          signing_secret?: string | null
+          updated_at?: string
+          url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "webhooks_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

@@ -5,7 +5,8 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Slider } from '@/components/ui/slider';
-import { Settings as SettingsIcon, Shield, Zap, Users, Bell, Loader2, Key, Copy, RefreshCw, Activity, AlertCircle, CheckCircle2, Clock } from 'lucide-react';
+import { Settings as SettingsIcon, Shield, Zap, Users, Bell, Loader2, Key, Copy, RefreshCw, Activity, AlertCircle, CheckCircle2, Clock, Webhook } from 'lucide-react';
+import { WebhooksTab } from '@/components/settings/WebhooksTab';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
@@ -228,6 +229,7 @@ export default function Settings() {
             <TabsTrigger value="policies">Policies</TabsTrigger>
             <TabsTrigger value="organization">Organization</TabsTrigger>
             <TabsTrigger value="notifications">Notifications</TabsTrigger>
+            <TabsTrigger value="webhooks">Webhooks</TabsTrigger>
             <TabsTrigger value="api-logs">API Logs</TabsTrigger>
           </TabsList>
 
@@ -370,6 +372,7 @@ export default function Settings() {
             </div>
           </TabsContent>
 
+          <WebhooksTab orgId={org?.id} />
           <ApiLogsTab orgId={org?.id} />
         </Tabs>
       </div>

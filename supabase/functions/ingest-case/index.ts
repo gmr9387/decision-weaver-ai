@@ -7,7 +7,7 @@ const corsHeaders = {
 };
 
 const RATE_LIMIT_WINDOW_MINUTES = 1;
-const RATE_LIMIT_MAX_REQUESTS = 30; // 30 requests per minute per org
+const RATE_LIMIT_MAX_REQUESTS = 30;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -20,7 +20,6 @@ Deno.serve(async (req) => {
     return respond(405, { error: "Method not allowed" });
   }
 
-  // Use service role for all DB operations
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
@@ -121,7 +120,7 @@ Deno.serve(async (req) => {
         metadata,
         owner,
       })
-      .select("id, case_number, status, severity, created_at")
+      .select("id, case_number, status, severity, category, created_at")
       .single();
 
     if (caseErr) {
@@ -155,6 +154,21 @@ Deno.serve(async (req) => {
       },
     };
 
+    // --- Fire webhooks (best-effort, non-blocking) ---
+    fireWebhooks(supabase, orgId, {
+      event: "case.ingested",
+      timestamp: new Date().toISOString(),
+      case: {
+        id: newCase.id,
+        case_number: newCase.case_number,
+        status: newCase.status,
+        severity: newCase.severity,
+        category: newCase.category,
+        facts_count: factEntries.length,
+        created_at: newCase.created_at,
+      },
+    }).catch(e => console.error("Webhook dispatch error:", e));
+
     return await logAndRespond(supabase, orgId, 201, result, requestBody, ip, userAgent, startTime, rateLimitHeaders);
   } catch (err) {
     return await logAndRespond(supabase, orgId, 500, {
@@ -183,10 +197,8 @@ async function logAndRespond(
 ) {
   const duration = Date.now() - startTime;
 
-  // Log the request (best-effort, don't fail the response)
   if (orgId) {
     try {
-      // Sanitize request body — strip large fact values for storage
       const sanitized = { ...requestBody };
       if (sanitized.facts && typeof sanitized.facts === "object") {
         const factKeys = Object.keys(sanitized.facts as Record<string, unknown>);
@@ -210,4 +222,52 @@ async function logAndRespond(
   }
 
   return respond(status, body, extraHeaders);
+}
+
+async function fireWebhooks(
+  supabase: ReturnType<typeof createClient>,
+  orgId: string,
+  payload: Record<string, unknown>,
+) {
+  const { data: webhooks } = await supabase
+    .from("webhooks")
+    .select("id, url, signing_secret, enabled")
+    .eq("organization_id", orgId)
+    .eq("enabled", true);
+
+  if (!webhooks || webhooks.length === 0) return;
+
+  const rawBody = JSON.stringify(payload);
+
+  await Promise.allSettled(
+    webhooks.map(async (wh: any) => {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+
+      if (wh.signing_secret) {
+        const encoder = new TextEncoder();
+        const key = await crypto.subtle.importKey(
+          "raw",
+          encoder.encode(wh.signing_secret),
+          { name: "HMAC", hash: "SHA-256" },
+          false,
+          ["sign"],
+        );
+        const sig = await crypto.subtle.sign("HMAC", key, encoder.encode(rawBody));
+        headers["x-webhook-signature"] = Array.from(new Uint8Array(sig))
+          .map(b => b.toString(16).padStart(2, "0"))
+          .join("");
+      }
+
+      const resp = await fetch(wh.url, {
+        method: "POST",
+        headers,
+        body: rawBody,
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (!resp.ok) {
+        console.error(`Webhook ${wh.id} failed: ${resp.status} ${resp.statusText}`);
+      }
+    }),
+  );
 }
