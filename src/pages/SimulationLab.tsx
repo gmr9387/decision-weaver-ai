@@ -1,16 +1,30 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useCases } from '@/hooks/use-data';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { FlaskConical, ArrowRight, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import type { Case } from '@/lib/types';
 
 export default function SimulationLab() {
-  const [selectedCase, setSelectedCase] = useState(MOCK_CASES.find(c => c.inferenceResult)!);
+  const { data: cases = [] } = useCases();
+  const defaultCase = useMemo(() => cases.find(c => c.inferenceResult) || cases[0], [cases]);
+  const [selectedCase, setSelectedCase] = useState<Case | undefined>(undefined);
+  const activeCase = selectedCase || defaultCase;
   const [factOverrides, setFactOverrides] = useState<Record<string, string>>({});
 
-  const baseline = selectedCase.inferenceResult;
+  if (!activeCase) {
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center h-full text-muted-foreground">
+          <p className="text-body-md">No cases available for simulation.</p>
+        </div>
+      </AppLayout>
+    );
+  }
+
+  const baseline = activeCase.inferenceResult;
   const hasOverrides = Object.keys(factOverrides).length > 0;
 
   const handleOverride = (key: string, value: string) => {
@@ -45,11 +59,11 @@ export default function SimulationLab() {
           {/* Facts Editor */}
           <div className="rounded-xl border border-border bg-gradient-card p-6">
             <h3 className="text-body-md font-semibold text-foreground mb-4">
-              Facts — {selectedCase.caseNumber}
+              Facts — {activeCase.caseNumber}
             </h3>
             <p className="text-caption text-muted-foreground mb-4">Modify values to simulate different outcomes</p>
             <div className="space-y-2">
-              {selectedCase.facts.map(fact => (
+              {activeCase.facts.map(fact => (
                 <div key={fact.key} className="flex items-center gap-3 p-3 rounded-lg bg-surface-2">
                   <span className="text-body-sm font-mono text-muted-foreground w-40 shrink-0">{fact.key}</span>
                   <Input

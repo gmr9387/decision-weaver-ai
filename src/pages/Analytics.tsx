@@ -3,26 +3,28 @@ import { useCases, useRules, useMetrics } from '@/hooks/use-data';
 import { Badge } from '@/components/ui/badge';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, PieChart, Pie, Cell
+  ResponsiveContainer,
 } from 'recharts';
 import { TrendingUp, AlertTriangle, FileSearch, Zap } from 'lucide-react';
 
-const COLORS = ['hsl(185, 85%, 48%)', 'hsl(38, 92%, 50%)', 'hsl(152, 69%, 41%)', 'hsl(0, 72%, 51%)', 'hsl(210, 100%, 52%)', 'hsl(280, 70%, 55%)'];
-
-const categoryDist = Object.entries(
-  MOCK_CASES.reduce<Record<string, number>>((acc, c) => { acc[c.category] = (acc[c.category] || 0) + 1; return acc; }, {})
-).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
-
-const missingFactsAgg = MOCK_CASES
-  .flatMap(c => c.inferenceResult?.missingFacts || [])
-  .reduce<Record<string, number>>((acc, f) => { acc[f] = (acc[f] || 0) + 1; return acc; }, {});
-const topMissing = Object.entries(missingFactsAgg).sort((a, b) => b[1] - a[1]).slice(0, 5);
-
-const topRules = [...MOCK_RULES].sort((a, b) => b.hitCount - a.hitCount).slice(0, 8).map(r => ({ name: r.name.length > 20 ? r.name.slice(0, 20) + '…' : r.name, hits: r.hitCount }));
-
-const escalationTrend = MOCK_METRICS.slice(-14).map(m => ({ date: m.date.slice(5), rate: Math.round(m.escalated / m.processed * 100) }));
-
 export default function Analytics() {
+  const { data: cases = [] } = useCases();
+  const { data: rules = [] } = useRules();
+  const { data: metrics = [] } = useMetrics();
+
+  const categoryDist = Object.entries(
+    cases.reduce<Record<string, number>>((acc, c) => { acc[c.category] = (acc[c.category] || 0) + 1; return acc; }, {})
+  ).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+
+  const missingFactsAgg = cases
+    .flatMap(c => c.inferenceResult?.missingFacts || [])
+    .reduce<Record<string, number>>((acc, f) => { acc[f] = (acc[f] || 0) + 1; return acc; }, {});
+  const topMissing = Object.entries(missingFactsAgg).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+  const topRules = [...rules].sort((a, b) => b.hitCount - a.hitCount).slice(0, 8).map(r => ({ name: r.name.length > 20 ? r.name.slice(0, 20) + '…' : r.name, hits: r.hitCount }));
+
+  const escalationTrend = metrics.slice(-14).map(m => ({ date: m.date.slice(5), rate: m.processed > 0 ? Math.round(m.escalated / m.processed * 100) : 0 }));
+
   return (
     <AppLayout>
       <div className="p-6 lg:p-8 space-y-6">
@@ -91,7 +93,7 @@ export default function Analytics() {
                   <span className="text-body-sm font-mono text-foreground">{fact}</span>
                   <div className="flex items-center gap-2">
                     <div className="w-24 h-1.5 rounded-full bg-surface-3">
-                      <div className="h-full rounded-full bg-warning" style={{ width: `${(count / topMissing[0][1]) * 100}%` }} />
+                      <div className="h-full rounded-full bg-warning" style={{ width: `${topMissing[0] ? (count / topMissing[0][1]) * 100 : 0}%` }} />
                     </div>
                     <Badge variant="secondary" className="font-mono text-caption">{count}</Badge>
                   </div>
