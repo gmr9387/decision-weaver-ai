@@ -2,9 +2,10 @@ import { Link, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import {
   LayoutDashboard, FileText, Scale, FlaskConical, BarChart3,
-  Settings, Zap, ChevronLeft, ChevronRight
+  Settings, Zap, ChevronLeft, ChevronRight, LogOut
 } from 'lucide-react';
 import { useState } from 'react';
+import { useAuth } from '@/hooks/use-auth';
 
 const navItems = [
   { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -18,6 +19,7 @@ const navItems = [
 export function AppSidebar() {
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
+  const { signOut, user } = useAuth();
 
   return (
     <aside className={cn(
@@ -57,12 +59,26 @@ export function AppSidebar() {
         })}
       </nav>
 
-      <button
-        onClick={() => setCollapsed(!collapsed)}
-        className="flex items-center justify-center py-3 border-t border-border text-muted-foreground hover:text-foreground transition-colors"
-      >
-        {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-      </button>
+      <div className="border-t border-border">
+        {user && (
+          <button
+            onClick={signOut}
+            className={cn(
+              "flex items-center gap-3 w-full px-5 py-3 text-body-sm text-muted-foreground hover:text-foreground hover:bg-surface-hover transition-colors",
+              collapsed && "justify-center px-0"
+            )}
+          >
+            <LogOut className="w-4 h-4 shrink-0" />
+            {!collapsed && <span>Sign Out</span>}
+          </button>
+        )}
+        <button
+          onClick={() => setCollapsed(!collapsed)}
+          className="flex items-center justify-center w-full py-3 border-t border-border text-muted-foreground hover:text-foreground transition-colors"
+        >
+          {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+        </button>
+      </div>
     </aside>
   );
 }

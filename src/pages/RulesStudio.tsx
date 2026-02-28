@@ -4,9 +4,18 @@ import { useRules } from '@/hooks/use-data';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Search, Plus, Copy, Pencil, Shield, Zap, GitBranch, Route, MessageSquare } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter
+} from '@/components/ui/dialog';
+import { Search, Plus, Copy, Pencil, Shield, Zap, GitBranch, Route, MessageSquare, Trash2, Loader2 } from 'lucide-react';
 import type { RuleType } from '@/lib/types';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/use-auth';
+import { useToast } from '@/hooks/use-toast';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 const typeIcons: Record<RuleType, any> = {
   deterministic: Shield, heuristic: Zap, derived_fact: GitBranch, routing: Route, explainability: MessageSquare,
@@ -16,13 +25,41 @@ const typeColors: Record<RuleType, string> = {
   deterministic: 'default', heuristic: 'info', derived_fact: 'warning', routing: 'success', explainability: 'secondary',
 };
 
+const RULE_TYPES: RuleType[] = ['deterministic', 'heuristic', 'derived_fact', 'routing', 'explainability'];
+
+interface RuleForm {
+  name: string;
+  description: string;
+  category: string;
+  type: RuleType;
+  priority: number;
+  enabled: boolean;
+  conditions: string;
+  output: string;
+  confidenceImpact: number;
+  explanationTemplate: string;
+}
+
+const emptyForm: RuleForm = {
+  name: '', description: '', category: 'General', type: 'deterministic',
+  priority: 5, enabled: true, conditions: '', output: '',
+  confidenceImpact: 0, explanationTemplate: '',
+};
+
 export default function RulesStudio() {
   const { data: fetchedRules = [] } = useRules();
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
   const [search, setSearch] = useState('');
   const [rules, setRules] = useState(fetchedRules);
+  const [selectedRule, setSelectedRule] = useState<string | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<RuleForm>(emptyForm);
 
   useEffect(() => { setRules(fetchedRules); }, [fetchedRules]);
-  const [selectedRule, setSelectedRule] = useState<string | null>(null);
 
   const filtered = rules.filter(r =>
     r.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -31,8 +68,93 @@ export default function RulesStudio() {
 
   const selected = selectedRule ? rules.find(r => r.id === selectedRule) : null;
 
-  const toggleRule = (id: string) => {
-    setRules(prev => prev.map(r => r.id === id ? { ...r, enabled: !r.enabled } : r));
+  const getOrgId = async () => {
+    const { data } = await supabase.from('profiles').select('organization_id').eq('user_id', user!.id).single();
+    return data?.organization_id;
+  };
+
+  const saveMutation = useMutation({
+    mutationFn: async (f: RuleForm & { id?: string }) => {
+      const orgId = await getOrgId();
+      if (!orgId) throw new Error('No organization found');
+
+      const payload = {
+        name: f.name,
+        description: f.description,
+        category: f.category,
+        rule_type: f.type as any,
+        priority: f.priority,
+        enabled: f.enabled,
+        conditions: f.conditions,
+        output: f.output,
+        confidence_impact: f.confidenceImpact,
+        explanation_template: f.explanationTemplate,
+        organization_id: orgId,
+      };
+
+      if (f.id) {
+        const { error } = await supabase.from('rules').update(payload).eq('id', f.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('rules').insert(payload);
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rules'] });
+      setDialogOpen(false);
+      toast({ title: editingId ? 'Rule updated' : 'Rule created' });
+    },
+    onError: (err: any) => {
+      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('rules').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rules'] });
+      setSelectedRule(null);
+      toast({ title: 'Rule deleted' });
+    },
+    onError: (err: any) => {
+      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    },
+  });
+
+  const toggleMutation = useMutation({
+    mutationFn: async ({ id, enabled }: { id: string; enabled: boolean }) => {
+      const { error } = await supabase.from('rules').update({ enabled }).eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['rules'] }),
+  });
+
+  const openCreate = () => { setEditingId(null); setForm(emptyForm); setDialogOpen(true); };
+  const openEdit = (rule: typeof selected) => {
+    if (!rule) return;
+    setEditingId(rule.id);
+    setForm({
+      name: rule.name, description: rule.description, category: rule.category,
+      type: rule.type, priority: rule.priority, enabled: rule.enabled,
+      conditions: rule.conditions, output: rule.output,
+      confidenceImpact: rule.confidenceImpact, explanationTemplate: rule.explanationTemplate,
+    });
+    setDialogOpen(true);
+  };
+  const openDuplicate = (rule: typeof selected) => {
+    if (!rule) return;
+    setEditingId(null);
+    setForm({
+      name: rule.name + ' (Copy)', description: rule.description, category: rule.category,
+      type: rule.type, priority: rule.priority, enabled: false,
+      conditions: rule.conditions, output: rule.output,
+      confidenceImpact: rule.confidenceImpact, explanationTemplate: rule.explanationTemplate,
+    });
+    setDialogOpen(true);
   };
 
   return (
@@ -43,7 +165,7 @@ export default function RulesStudio() {
           <div className="p-4 border-b border-border space-y-3">
             <div className="flex items-center justify-between">
               <h1 className="text-display-sm text-foreground">Rules Studio</h1>
-              <Button size="sm" className="gap-1.5"><Plus className="w-3 h-3" /> Add</Button>
+              <Button size="sm" className="gap-1.5" onClick={openCreate}><Plus className="w-3 h-3" /> Add</Button>
             </div>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -64,7 +186,11 @@ export default function RulesStudio() {
                       <Icon className="w-3.5 h-3.5 text-muted-foreground" />
                       <span className="text-body-sm font-medium text-foreground">{rule.name}</span>
                     </div>
-                    <Switch checked={rule.enabled} onCheckedChange={() => toggleRule(rule.id)} onClick={e => e.stopPropagation()} />
+                    <Switch
+                      checked={rule.enabled}
+                      onCheckedChange={(v) => { toggleMutation.mutate({ id: rule.id, enabled: v }); }}
+                      onClick={e => e.stopPropagation()}
+                    />
                   </div>
                   <div className="flex items-center gap-2 mt-1">
                     <Badge variant={typeColors[rule.type] as any} className="text-caption capitalize">{rule.type.replace('_', ' ')}</Badge>
@@ -90,8 +216,15 @@ export default function RulesStudio() {
                   <p className="text-body-sm text-muted-foreground">{selected.description}</p>
                 </div>
                 <div className="flex gap-2">
-                  <Button variant="outline" size="sm" className="gap-1.5"><Copy className="w-3 h-3" /> Duplicate</Button>
-                  <Button variant="outline" size="sm" className="gap-1.5"><Pencil className="w-3 h-3" /> Edit</Button>
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={() => openDuplicate(selected)}>
+                    <Copy className="w-3 h-3" /> Duplicate
+                  </Button>
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={() => openEdit(selected)}>
+                    <Pencil className="w-3 h-3" /> Edit
+                  </Button>
+                  <Button variant="outline" size="sm" className="gap-1.5 text-destructive hover:text-destructive" onClick={() => deleteMutation.mutate(selected.id)}>
+                    <Trash2 className="w-3 h-3" /> Delete
+                  </Button>
                 </div>
               </div>
 
@@ -100,12 +233,11 @@ export default function RulesStudio() {
                   <h3 className="text-body-md font-semibold text-foreground mb-4">Rule Configuration</h3>
                   <dl className="space-y-3 text-body-sm">
                     {[
-                      ['Rule ID', selected.id],
+                      ['Rule ID', selected.id.slice(0, 8) + '…'],
                       ['Category', selected.category],
                       ['Priority', selected.priority.toString()],
                       ['Version', `v${selected.version}`],
                       ['Last Modified', selected.lastModified],
-                      ['Hit Count', selected.hitCount.toLocaleString()],
                       ['Confidence Impact', `${selected.confidenceImpact >= 0 ? '+' : ''}${(selected.confidenceImpact * 100).toFixed(0)}%`],
                       ['Status', selected.enabled ? 'Enabled' : 'Disabled'],
                     ].map(([label, value]) => (
@@ -143,6 +275,70 @@ export default function RulesStudio() {
           )}
         </div>
       </div>
+
+      {/* Create/Edit Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-lg bg-card border-border">
+          <DialogHeader>
+            <DialogTitle className="text-foreground">{editingId ? 'Edit Rule' : 'Create Rule'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 max-h-[60vh] overflow-auto pr-2">
+            <div className="space-y-2">
+              <Label className="text-muted-foreground">Name</Label>
+              <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} className="bg-surface-2" />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-muted-foreground">Description</Label>
+              <Textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} className="bg-surface-2" rows={2} />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-muted-foreground">Category</Label>
+                <Input value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} className="bg-surface-2" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-muted-foreground">Type</Label>
+                <select value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value as RuleType }))} className="w-full bg-surface-2 border border-border rounded-md px-3 py-2 text-body-sm text-foreground">
+                  {RULE_TYPES.map(t => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-muted-foreground">Priority</Label>
+                <Input type="number" min={1} max={10} value={form.priority} onChange={e => setForm(f => ({ ...f, priority: +e.target.value }))} className="bg-surface-2" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-muted-foreground">Confidence Impact</Label>
+                <Input type="number" step={0.05} min={-1} max={1} value={form.confidenceImpact} onChange={e => setForm(f => ({ ...f, confidenceImpact: +e.target.value }))} className="bg-surface-2" />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-muted-foreground">Conditions</Label>
+              <Textarea value={form.conditions} onChange={e => setForm(f => ({ ...f, conditions: e.target.value }))} className="bg-surface-2 font-mono text-body-sm" rows={2} placeholder="e.g. amount > 25000" />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-muted-foreground">Output</Label>
+              <Textarea value={form.output} onChange={e => setForm(f => ({ ...f, output: e.target.value }))} className="bg-surface-2 font-mono text-body-sm" rows={2} placeholder="e.g. flag_for_review" />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-muted-foreground">Explanation Template</Label>
+              <Textarea value={form.explanationTemplate} onChange={e => setForm(f => ({ ...f, explanationTemplate: e.target.value }))} className="bg-surface-2" rows={2} />
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch checked={form.enabled} onCheckedChange={v => setForm(f => ({ ...f, enabled: v }))} />
+              <Label className="text-muted-foreground">Enabled</Label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+            <Button variant="hero" onClick={() => saveMutation.mutate({ ...form, id: editingId || undefined })} disabled={saveMutation.isPending || !form.name}>
+              {saveMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+              {editingId ? 'Update' : 'Create'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }
