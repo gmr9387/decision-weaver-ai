@@ -1,1 +1,4 @@
 project_id = "avcsczjzociyodulwcui"
+
+[functions.run-simulation]
+verify_jwt = false
