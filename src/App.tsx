@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/use-auth";
+import { AuthGateProvider } from "@/hooks/use-auth-gate";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Landing from "./pages/Landing";
 import Auth from "./pages/Auth";
@@ -27,20 +28,22 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
-          <Routes>
-            <Route path="/" element={<Landing />} />
-            <Route path="/auth" element={<Auth />} />
-            <Route path="/reset-password" element={<ResetPassword />} />
-            <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-            <Route path="/cases" element={<ProtectedRoute><Cases /></ProtectedRoute>} />
-            <Route path="/cases/:id" element={<ProtectedRoute><CaseDetail /></ProtectedRoute>} />
-            <Route path="/rules" element={<ProtectedRoute><RulesStudio /></ProtectedRoute>} />
-            <Route path="/simulation" element={<ProtectedRoute><SimulationLab /></ProtectedRoute>} />
-            <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
-            <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-            <Route path="/api-docs" element={<ProtectedRoute><ApiDocs /></ProtectedRoute>} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
+          <AuthGateProvider>
+            <Routes>
+              <Route path="/" element={<Landing />} />
+              <Route path="/auth" element={<Auth />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/cases" element={<Cases />} />
+              <Route path="/cases/:id" element={<CaseDetail />} />
+              <Route path="/rules" element={<RulesStudio />} />
+              <Route path="/simulation" element={<SimulationLab />} />
+              <Route path="/analytics" element={<Analytics />} />
+              <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+              <Route path="/api-docs" element={<ApiDocs />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </AuthGateProvider>
         </BrowserRouter>
       </TooltipProvider>
     </AuthProvider>

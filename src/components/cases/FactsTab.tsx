@@ -7,6 +7,7 @@ import { AlertTriangle, Loader2, Plus } from 'lucide-react';
 import type { Case, InferenceResult } from '@/lib/types';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useAuthGate } from '@/hooks/use-auth-gate';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 interface FactsTabProps {
@@ -20,6 +21,7 @@ export function FactsTab({ caseId, caseData, ir }: FactsTabProps) {
   const [newFactValue, setNewFactValue] = useState('');
   const [newFactSource, setNewFactSource] = useState('Manual');
   const { toast } = useToast();
+  const { requireAuth } = useAuthGate();
   const queryClient = useQueryClient();
 
   const addFactMutation = useMutation({
@@ -88,7 +90,7 @@ export function FactsTab({ caseId, caseData, ir }: FactsTabProps) {
                 <span className="text-caption text-muted-foreground">Source</span>
                 <Input value={newFactSource} onChange={e => setNewFactSource(e.target.value)} className="bg-surface-3 h-8 text-body-sm" />
               </div>
-              <Button size="sm" variant="hero" className="h-8 gap-1" onClick={() => addFactMutation.mutate()} disabled={addFactMutation.isPending || !newFactKey.trim()}>
+              <Button size="sm" variant="hero" className="h-8 gap-1" onClick={() => { if (!requireAuth('add facts')) return; addFactMutation.mutate(); }} disabled={addFactMutation.isPending || !newFactKey.trim()}>
                 {addFactMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
                 Add
               </Button>
