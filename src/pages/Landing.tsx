@@ -206,7 +206,7 @@ export default function Landing() {
             <Zap className="w-3 h-3 text-primary" />
             <span>InferenceCore AI</span>
           </div>
-          <span>© 2024 InferenceCore AI. All rights reserved.</span>
+          <span>© 2026 InferenceCore AI. All rights reserved.</span>
         </div>
       </footer>
     </div>
