@@ -565,6 +565,79 @@ export type Database = {
         }
         Relationships: []
       }
+      webhook_delivery_logs: {
+        Row: {
+          attempt: number
+          case_id: string | null
+          created_at: string
+          duration_ms: number | null
+          error_message: string | null
+          event: string
+          id: string
+          max_attempts: number
+          next_retry_at: string | null
+          organization_id: string
+          response_body: string | null
+          status: string
+          status_code: number | null
+          webhook_id: string
+        }
+        Insert: {
+          attempt?: number
+          case_id?: string | null
+          created_at?: string
+          duration_ms?: number | null
+          error_message?: string | null
+          event?: string
+          id?: string
+          max_attempts?: number
+          next_retry_at?: string | null
+          organization_id: string
+          response_body?: string | null
+          status?: string
+          status_code?: number | null
+          webhook_id: string
+        }
+        Update: {
+          attempt?: number
+          case_id?: string | null
+          created_at?: string
+          duration_ms?: number | null
+          error_message?: string | null
+          event?: string
+          id?: string
+          max_attempts?: number
+          next_retry_at?: string | null
+          organization_id?: string
+          response_body?: string | null
+          status?: string
+          status_code?: number | null
+          webhook_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "webhook_delivery_logs_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "webhook_delivery_logs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "webhook_delivery_logs_webhook_id_fkey"
+            columns: ["webhook_id"]
+            isOneToOne: false
+            referencedRelation: "webhooks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       webhooks: {
         Row: {
           created_at: string

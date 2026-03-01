@@ -9,6 +9,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
+import { WebhookDeliveryLogs } from './WebhookDeliveryLogs';
 
 export function WebhooksTab({ orgId }: { orgId?: string }) {
   const { toast } = useToast();
@@ -169,6 +170,12 @@ export function WebhooksTab({ orgId }: { orgId?: string }) {
         <p className="text-caption text-muted-foreground">
           If a signing secret is configured, the <code className="bg-surface-2 px-1 rounded text-xs">x-webhook-signature</code> header contains an HMAC-SHA256 hex digest of the raw body.
         </p>
+      </div>
+
+      <div className="rounded-xl border border-border bg-gradient-card p-6 space-y-3">
+        <h3 className="text-body-md font-semibold text-foreground">Delivery Log</h3>
+        <p className="text-caption text-muted-foreground">Recent webhook delivery attempts with status and timing.</p>
+        <WebhookDeliveryLogs orgId={orgId} />
       </div>
     </TabsContent>
   );
