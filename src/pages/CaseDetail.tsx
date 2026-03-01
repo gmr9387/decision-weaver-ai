@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useCaseDetail, useInferenceHistory } from '@/hooks/use-data';
 import { useRunInference } from '@/hooks/use-actions';
+import { useAuthGate } from '@/hooks/use-auth-gate';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -25,8 +26,10 @@ export default function CaseDetail() {
   const { data: inferenceHistory = [] } = useInferenceHistory(id);
   const runInference = useRunInference();
   const [inferenceMode, setInferenceMode] = useState<InferenceMode>('instant');
+  const { requireAuth } = useAuthGate();
 
   const handleRunInference = () => {
+    if (!requireAuth('run inference')) return;
     if (!caseData || !id) return;
     const factsMap: Record<string, unknown> = {};
     for (const f of caseData.facts) {

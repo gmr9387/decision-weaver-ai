@@ -14,6 +14,7 @@ import { Search, Plus, Copy, Pencil, Shield, Zap, GitBranch, Route, MessageSquar
 import type { RuleType } from '@/lib/types';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
+import { useAuthGate } from '@/hooks/use-auth-gate';
 import { useToast } from '@/hooks/use-toast';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
@@ -49,6 +50,7 @@ const emptyForm: RuleForm = {
 export default function RulesStudio() {
   const { data: fetchedRules = [] } = useRules();
   const { user } = useAuth();
+  const { requireAuth } = useAuthGate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -133,8 +135,9 @@ export default function RulesStudio() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['rules'] }),
   });
 
-  const openCreate = () => { setEditingId(null); setForm(emptyForm); setDialogOpen(true); };
+  const openCreate = () => { if (!requireAuth('create rules')) return; setEditingId(null); setForm(emptyForm); setDialogOpen(true); };
   const openEdit = (rule: typeof selected) => {
+    if (!requireAuth('edit rules')) return;
     if (!rule) return;
     setEditingId(rule.id);
     setForm({
@@ -146,6 +149,7 @@ export default function RulesStudio() {
     setDialogOpen(true);
   };
   const openDuplicate = (rule: typeof selected) => {
+    if (!requireAuth('duplicate rules')) return;
     if (!rule) return;
     setEditingId(null);
     setForm({
@@ -188,7 +192,7 @@ export default function RulesStudio() {
                     </div>
                     <Switch
                       checked={rule.enabled}
-                      onCheckedChange={(v) => { toggleMutation.mutate({ id: rule.id, enabled: v }); }}
+                      onCheckedChange={(v) => { if (!requireAuth('toggle rules')) return; toggleMutation.mutate({ id: rule.id, enabled: v }); }}
                       onClick={e => e.stopPropagation()}
                     />
                   </div>
@@ -222,7 +226,7 @@ export default function RulesStudio() {
                   <Button variant="outline" size="sm" className="gap-1.5" onClick={() => openEdit(selected)}>
                     <Pencil className="w-3 h-3" /> Edit
                   </Button>
-                  <Button variant="outline" size="sm" className="gap-1.5 text-destructive hover:text-destructive" onClick={() => deleteMutation.mutate(selected.id)}>
+                  <Button variant="outline" size="sm" className="gap-1.5 text-destructive hover:text-destructive" onClick={() => { if (!requireAuth('delete rules')) return; deleteMutation.mutate(selected.id); }}>
                     <Trash2 className="w-3 h-3" /> Delete
                   </Button>
                 </div>

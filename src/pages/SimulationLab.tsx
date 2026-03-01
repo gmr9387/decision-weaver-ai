@@ -14,6 +14,7 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import type { Case, InferenceResult } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
+import { useAuthGate } from '@/hooks/use-auth-gate';
 
 export default function SimulationLab() {
   const { data: cases = [] } = useCases();
@@ -28,6 +29,7 @@ export default function SimulationLab() {
   const [showFiredRules, setShowFiredRules] = useState(false);
   const [showBreakdown, setShowBreakdown] = useState(false);
   const { toast } = useToast();
+  const { requireAuth } = useAuthGate();
 
   if (!activeCase) {
     return (
@@ -54,6 +56,7 @@ export default function SimulationLab() {
   };
 
   const runSimulation = async () => {
+    if (!requireAuth('run simulations')) return;
     setRunning(true);
     try {
       // Build merged facts: baseline + overrides
