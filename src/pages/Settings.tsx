@@ -1,11 +1,11 @@
 import { AppLayout } from '@/components/layout/AppLayout';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Switch } from '@/components/ui/switch';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Slider } from '@/components/ui/slider';
-import { Settings as SettingsIcon, Shield, Zap, Users, Bell, Loader2, Key, Copy, RefreshCw, Webhook } from 'lucide-react';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Settings as SettingsIcon, Loader2 } from 'lucide-react';
+import { InferenceTab } from '@/components/settings/InferenceTab';
+import { PoliciesTab } from '@/components/settings/PoliciesTab';
+import { OrganizationTab } from '@/components/settings/OrganizationTab';
+import { NotificationsTab } from '@/components/settings/NotificationsTab';
 import { WebhooksTab } from '@/components/settings/WebhooksTab';
 import { ApiLogsTab } from '@/components/settings/ApiLogsTab';
 import { useState, useEffect } from 'react';
@@ -87,12 +87,7 @@ export default function Settings() {
   });
 
   const handleSave = () => {
-    saveMutation.mutate({
-      autoResolveThreshold: autoResolveThreshold[0],
-      escalationThreshold: escalationThreshold[0],
-      modes,
-      notifications,
-    });
+    saveMutation.mutate({ autoResolveThreshold: autoResolveThreshold[0], escalationThreshold: escalationThreshold[0], modes, notifications });
   };
 
   if (isLoading) {
@@ -104,6 +99,8 @@ export default function Settings() {
       </AppLayout>
     );
   }
+
+  const apiKey = (org?.settings as any)?.api_key;
 
   return (
     <AppLayout>
@@ -134,140 +131,14 @@ export default function Settings() {
             <TabsTrigger value="api-logs">API Logs</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="inference" className="space-y-4">
-            <div className="rounded-xl border border-border bg-gradient-card p-6 space-y-6">
-              <h3 className="text-body-md font-semibold text-foreground flex items-center gap-2">
-                <Zap className="w-4 h-4 text-primary" /> Confidence Thresholds
-              </h3>
-              <div className="space-y-4">
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-body-sm text-muted-foreground">Auto-Resolution Threshold</span>
-                    <Badge variant="confidence" className="font-mono">{autoResolveThreshold[0]}%</Badge>
-                  </div>
-                  <Slider value={autoResolveThreshold} onValueChange={setAutoResolveThreshold} min={50} max={99} step={1} />
-                  <p className="text-caption text-muted-foreground mt-1">Cases above this confidence are auto-resolved</p>
-                </div>
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-body-sm text-muted-foreground">Escalation Threshold</span>
-                    <Badge variant="warning" className="font-mono">{escalationThreshold[0]}%</Badge>
-                  </div>
-                  <Slider value={escalationThreshold} onValueChange={setEscalationThreshold} min={10} max={70} step={1} />
-                  <p className="text-caption text-muted-foreground mt-1">Cases below this confidence are escalated</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-border bg-gradient-card p-6 space-y-4">
-              <h3 className="text-body-md font-semibold text-foreground">Inference Modes</h3>
-              {([
-                { key: 'instant' as const, mode: 'Instant Mode', desc: 'Normalization + rules + scoring. Fastest path.' },
-                { key: 'deep' as const, mode: 'Deep Mode', desc: 'Instant + contradiction analysis + expanded actions.' },
-                { key: 'assisted' as const, mode: 'Assisted Reasoning', desc: 'Deep + optional LLM reasoning for complex cases.' },
-              ]).map(m => (
-                <div key={m.key} className="flex items-center justify-between p-4 rounded-lg bg-surface-2">
-                  <div>
-                    <span className="text-body-sm font-medium text-foreground">{m.mode}</span>
-                    <p className="text-caption text-muted-foreground">{m.desc}</p>
-                  </div>
-                  <Switch checked={modes[m.key]} onCheckedChange={v => setModes(prev => ({ ...prev, [m.key]: v }))} />
-                </div>
-              ))}
-            </div>
-          </TabsContent>
-
-          <TabsContent value="policies" className="space-y-4">
-            <div className="rounded-xl border border-border bg-gradient-card p-6 space-y-4">
-              <h3 className="text-body-md font-semibold text-foreground flex items-center gap-2">
-                <Shield className="w-4 h-4 text-primary" /> Severity Policies
-              </h3>
-              {['Critical', 'High', 'Medium', 'Low'].map(sev => (
-                <div key={sev} className="flex items-center justify-between p-4 rounded-lg bg-surface-2">
-                  <div>
-                    <span className="text-body-sm font-medium text-foreground">{sev} Severity</span>
-                    <p className="text-caption text-muted-foreground">Configure routing and SLA for {sev.toLowerCase()} severity cases</p>
-                  </div>
-                  <Button variant="outline" size="sm">Configure</Button>
-                </div>
-              ))}
-            </div>
-          </TabsContent>
-
-          <TabsContent value="organization" className="space-y-4">
-            <div className="rounded-xl border border-border bg-gradient-card p-6 space-y-4">
-              <h3 className="text-body-md font-semibold text-foreground flex items-center gap-2">
-                <Users className="w-4 h-4 text-primary" /> Organization
-              </h3>
-              <div className="grid gap-4">
-                <div>
-                  <label className="text-body-sm text-muted-foreground mb-1 block">Organization Name</label>
-                  <Input value={orgName} onChange={e => setOrgName(e.target.value)} className="bg-surface-2 max-w-sm" />
-                </div>
-                <div>
-                  <label className="text-body-sm text-muted-foreground mb-1 block">Organization ID</label>
-                  <Input value={org?.id || ''} className="bg-surface-2 max-w-sm" disabled />
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-border bg-gradient-card p-6 space-y-4">
-              <h3 className="text-body-md font-semibold text-foreground flex items-center gap-2">
-                <Key className="w-4 h-4 text-primary" /> API Ingest Key
-              </h3>
-              <p className="text-caption text-muted-foreground">
-                Use this key in the <code className="bg-surface-2 px-1 rounded text-xs">x-api-key</code> header to submit cases via the API.
-              </p>
-              {(settings as any).api_key || (org?.settings as any)?.api_key ? (
-                <div className="flex items-center gap-2">
-                  <Input value={(org?.settings as any)?.api_key || ''} className="bg-surface-2 max-w-md font-mono text-xs" readOnly />
-                  <Button variant="outline" size="icon" className="shrink-0" onClick={() => {
-                    navigator.clipboard.writeText((org?.settings as any)?.api_key || '');
-                    toast({ title: 'Copied to clipboard' });
-                  }}>
-                    <Copy className="w-4 h-4" />
-                  </Button>
-                  <Button variant="outline" size="icon" className="shrink-0" onClick={async () => {
-                    if (!org) return;
-                    await supabase.rpc('generate_org_api_key' as any, { org_id: org.id });
-                    queryClient.invalidateQueries({ queryKey: ['organization'] });
-                    toast({ title: 'API key regenerated', description: 'The old key is now invalid.' });
-                  }}>
-                    <RefreshCw className="w-4 h-4" />
-                  </Button>
-                </div>
-              ) : (
-                <Button variant="outline" className="gap-2" onClick={async () => {
-                  if (!org) return;
-                  await supabase.rpc('generate_org_api_key' as any, { org_id: org.id });
-                  queryClient.invalidateQueries({ queryKey: ['organization'] });
-                  toast({ title: 'API key generated', description: 'You can now use this key to submit cases via the API.' });
-                }}>
-                  <Key className="w-4 h-4" /> Generate API Key
-                </Button>
-              )}
-            </div>
-          </TabsContent>
-
-          <TabsContent value="notifications" className="space-y-4">
-            <div className="rounded-xl border border-border bg-gradient-card p-6 space-y-4">
-              <h3 className="text-body-md font-semibold text-foreground flex items-center gap-2">
-                <Bell className="w-4 h-4 text-primary" /> Notification Preferences
-              </h3>
-              {([
-                { key: 'criticalEscalations' as const, label: 'Email on critical escalations' },
-                { key: 'dailyDigest' as const, label: 'Daily digest of auto-resolved cases' },
-                { key: 'ruleChangeAlerts' as const, label: 'Rule version change alerts' },
-                { key: 'confidenceDrift' as const, label: 'Confidence drift warnings' },
-              ]).map(n => (
-                <div key={n.key} className="flex items-center justify-between p-4 rounded-lg bg-surface-2">
-                  <span className="text-body-sm text-foreground">{n.label}</span>
-                  <Switch checked={notifications[n.key]} onCheckedChange={v => setNotifications(prev => ({ ...prev, [n.key]: v }))} />
-                </div>
-              ))}
-            </div>
-          </TabsContent>
-
+          <InferenceTab
+            autoResolveThreshold={autoResolveThreshold} setAutoResolveThreshold={setAutoResolveThreshold}
+            escalationThreshold={escalationThreshold} setEscalationThreshold={setEscalationThreshold}
+            modes={modes} setModes={setModes}
+          />
+          <PoliciesTab />
+          <OrganizationTab org={org} orgName={orgName} setOrgName={setOrgName} apiKey={apiKey} />
+          <NotificationsTab notifications={notifications} setNotifications={setNotifications} />
           <WebhooksTab orgId={org?.id} />
           <ApiLogsTab orgId={org?.id} />
         </Tabs>
