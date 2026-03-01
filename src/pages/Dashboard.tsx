@@ -4,40 +4,12 @@ import { useSeedDemoData } from '@/hooks/use-actions';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { motion } from 'framer-motion';
-import {
-  Activity, TrendingUp, AlertTriangle, CheckCircle2,
-  ArrowUpRight, Zap, BarChart3, Database, Loader2
-} from 'lucide-react';
-import {
-  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, PieChart, Pie, Cell
-} from 'recharts';
+import { Activity, TrendingUp, AlertTriangle, CheckCircle2, Zap, BarChart3, Database, Loader2 } from 'lucide-react';
 import { useMemo } from 'react';
-
-const CHART_COLORS = ['hsl(185, 85%, 48%)', 'hsl(38, 92%, 50%)', 'hsl(152, 69%, 41%)', 'hsl(0, 72%, 51%)', 'hsl(210, 100%, 52%)', 'hsl(280, 70%, 55%)', 'hsl(15, 90%, 55%)', 'hsl(320, 70%, 50%)'];
-
-function MetricCard({ icon: Icon, label, value, change, color }: { icon: any; label: string; value: string; change?: string; color: string }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="rounded-xl border border-border bg-gradient-card p-5"
-    >
-      <div className="flex items-start justify-between mb-3">
-        <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${color}`}>
-          <Icon className="w-4 h-4" />
-        </div>
-        {change && (
-          <span className="flex items-center gap-0.5 text-caption text-success">
-            <ArrowUpRight className="w-3 h-3" /> {change}
-          </span>
-        )}
-      </div>
-      <div className="text-display-sm text-foreground">{value}</div>
-      <div className="text-caption text-muted-foreground mt-1">{label}</div>
-    </motion.div>
-  );
-}
+import { MetricCard } from '@/components/dashboard/MetricCard';
+import { ProcessingVolumeChart } from '@/components/dashboard/ProcessingVolumeChart';
+import { DecisionDistChart } from '@/components/dashboard/DecisionDistChart';
+import { ConfidenceTrendChart } from '@/components/dashboard/ConfidenceTrendChart';
 
 export default function Dashboard() {
   const { data: cases = [], isLoading: casesLoading } = useCases();
@@ -84,7 +56,6 @@ export default function Dashboard() {
           </Badge>
         </div>
 
-        {/* Empty state with seed button */}
         {isEmpty && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -96,12 +67,7 @@ export default function Dashboard() {
             <p className="text-body-sm text-muted-foreground mb-6 max-w-md mx-auto">
               Your dashboard is empty. Load demo data to explore the platform with sample rules, cases, and metrics.
             </p>
-            <Button
-              variant="hero"
-              className="gap-2"
-              onClick={() => seedData.mutate()}
-              disabled={seedData.isPending}
-            >
+            <Button variant="hero" className="gap-2" onClick={() => seedData.mutate()} disabled={seedData.isPending}>
               {seedData.isPending ? (
                 <><Loader2 className="w-4 h-4 animate-spin" /> Seeding...</>
               ) : (
@@ -121,58 +87,12 @@ export default function Dashboard() {
             </div>
 
             <div className="grid lg:grid-cols-3 gap-4">
-              <div className="lg:col-span-2 rounded-xl border border-border bg-gradient-card p-5">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-body-md font-semibold text-foreground">Processing Volume</h2>
-                  <Badge variant="secondary">Last 14 days</Badge>
-                </div>
-                <ResponsiveContainer width="100%" height={260}>
-                  <BarChart data={recentMetrics}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(222, 15%, 14%)" />
-                    <XAxis dataKey="date" tick={{ fill: 'hsl(215, 15%, 55%)', fontSize: 11 }} tickFormatter={v => v.slice(5)} />
-                    <YAxis tick={{ fill: 'hsl(215, 15%, 55%)', fontSize: 11 }} />
-                    <Tooltip contentStyle={{ background: 'hsl(222, 20%, 10%)', border: '1px solid hsl(222, 15%, 18%)', borderRadius: 8, fontSize: 12 }} />
-                    <Bar dataKey="autoResolved" name="Auto-Resolved" fill="hsl(185, 85%, 48%)" radius={[3, 3, 0, 0]} />
-                    <Bar dataKey="escalated" name="Escalated" fill="hsl(38, 92%, 50%)" radius={[3, 3, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-
-              <div className="rounded-xl border border-border bg-gradient-card p-5">
-                <h2 className="text-body-md font-semibold text-foreground mb-4">Decision Distribution</h2>
-                <ResponsiveContainer width="100%" height={200}>
-                  <PieChart>
-                    <Pie data={decisionDist} cx="50%" cy="50%" innerRadius={55} outerRadius={80} dataKey="value" paddingAngle={3}>
-                      {decisionDist.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
-                    </Pie>
-                    <Tooltip contentStyle={{ background: 'hsl(222, 20%, 10%)', border: '1px solid hsl(222, 15%, 18%)', borderRadius: 8, fontSize: 12 }} />
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {decisionDist.slice(0, 5).map((d, i) => (
-                    <span key={d.name} className="flex items-center gap-1.5 text-caption text-muted-foreground">
-                      <span className="w-2 h-2 rounded-full" style={{ background: CHART_COLORS[i] }} />
-                      {d.name}
-                    </span>
-                  ))}
-                </div>
-              </div>
+              <ProcessingVolumeChart metrics={recentMetrics} />
+              <DecisionDistChart data={decisionDist} />
             </div>
 
             <div className="grid lg:grid-cols-3 gap-4">
-              <div className="lg:col-span-2 rounded-xl border border-border bg-gradient-card p-5">
-                <h2 className="text-body-md font-semibold text-foreground mb-4">Confidence Trend</h2>
-                <ResponsiveContainer width="100%" height={200}>
-                  <LineChart data={recentMetrics}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(222, 15%, 14%)" />
-                    <XAxis dataKey="date" tick={{ fill: 'hsl(215, 15%, 55%)', fontSize: 11 }} tickFormatter={v => v.slice(5)} />
-                    <YAxis domain={[50, 100]} tick={{ fill: 'hsl(215, 15%, 55%)', fontSize: 11 }} />
-                    <Tooltip contentStyle={{ background: 'hsl(222, 20%, 10%)', border: '1px solid hsl(222, 15%, 18%)', borderRadius: 8, fontSize: 12 }} />
-                    <Line type="monotone" dataKey="avgConfidence" stroke="hsl(185, 85%, 48%)" strokeWidth={2} dot={false} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-
+              <ConfidenceTrendChart metrics={recentMetrics} />
               <div className="rounded-xl border border-border bg-gradient-card p-5">
                 <div className="flex items-center gap-2 mb-4">
                   <Zap className="w-4 h-4 text-primary" />

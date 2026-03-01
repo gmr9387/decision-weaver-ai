@@ -1,13 +1,7 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-api-key",
-};
-
-const RATE_LIMIT_WINDOW_MINUTES = 1;
-const RATE_LIMIT_MAX_REQUESTS = 30;
+import { createServiceClient, corsHeaders, respond } from "../_shared/cors.ts";
+import { authenticateApiKey } from "../_shared/auth.ts";
+import { checkRateLimit } from "../_shared/rate-limit.ts";
+import { fireWebhooks } from "../_shared/webhooks.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -20,62 +14,28 @@ Deno.serve(async (req) => {
     return respond(405, { error: "Method not allowed" });
   }
 
-  const supabase = createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-  );
-
+  const supabase = createServiceClient();
   let orgId: string | null = null;
   let requestBody: Record<string, unknown> = {};
 
   try {
     // --- Auth ---
-    const apiKey = req.headers.get("x-api-key");
-    if (!apiKey || !apiKey.startsWith("ic_")) {
-      return await logAndRespond(supabase, null, 401, { error: "Missing or invalid API key. Pass via x-api-key header." }, requestBody, ip, userAgent, startTime);
+    const authResult = await authenticateApiKey(supabase, req.headers.get("x-api-key"));
+    if ("error" in authResult) {
+      return await logAndRespond(supabase, null, authResult.status, { error: authResult.error }, requestBody, ip, userAgent, startTime);
     }
-
-    const { data: orgs, error: orgErr } = await supabase
-      .from("organizations")
-      .select("id, name, settings")
-      .filter("settings->api_key", "eq", `"${apiKey}"`);
-
-    if (orgErr || !orgs || orgs.length === 0) {
-      return await logAndRespond(supabase, null, 403, { error: "Invalid API key" }, requestBody, ip, userAgent, startTime);
-    }
-
-    const org = orgs[0];
-    orgId = org.id;
+    orgId = authResult.orgId;
 
     // --- Rate Limiting ---
-    const windowStart = new Date(Date.now() - RATE_LIMIT_WINDOW_MINUTES * 60 * 1000).toISOString();
-    const { count: recentCount } = await supabase
-      .from("api_request_logs")
-      .select("*", { count: "exact", head: true })
-      .eq("organization_id", orgId)
-      .gte("created_at", windowStart);
-
-    if ((recentCount || 0) >= RATE_LIMIT_MAX_REQUESTS) {
-      const retryAfter = RATE_LIMIT_WINDOW_MINUTES * 60;
+    const rateLimit = await checkRateLimit(supabase, orgId);
+    if (!rateLimit.allowed) {
       return await logAndRespond(supabase, orgId, 429, {
         error: "Rate limit exceeded",
-        limit: RATE_LIMIT_MAX_REQUESTS,
-        window: `${RATE_LIMIT_WINDOW_MINUTES}m`,
-        retry_after_seconds: retryAfter,
-      }, requestBody, ip, userAgent, startTime, {
-        "Retry-After": String(retryAfter),
-        "X-RateLimit-Limit": String(RATE_LIMIT_MAX_REQUESTS),
-        "X-RateLimit-Remaining": "0",
-        "X-RateLimit-Reset": new Date(Date.now() + retryAfter * 1000).toISOString(),
-      });
+        limit: 30,
+        window: "1m",
+        retry_after_seconds: rateLimit.retryAfter,
+      }, requestBody, ip, userAgent, startTime, rateLimit.headers);
     }
-
-    const remaining = RATE_LIMIT_MAX_REQUESTS - (recentCount || 0) - 1;
-    const rateLimitHeaders = {
-      "X-RateLimit-Limit": String(RATE_LIMIT_MAX_REQUESTS),
-      "X-RateLimit-Remaining": String(Math.max(0, remaining)),
-      "X-RateLimit-Reset": new Date(Date.now() + RATE_LIMIT_WINDOW_MINUTES * 60 * 1000).toISOString(),
-    };
 
     // --- Parse & Validate ---
     requestBody = await req.json();
@@ -93,7 +53,7 @@ Deno.serve(async (req) => {
     if (!validSeverities.includes(severity)) {
       return await logAndRespond(supabase, orgId, 400, {
         error: `Invalid severity. Must be one of: ${validSeverities.join(", ")}`,
-      }, requestBody, ip, userAgent, startTime, rateLimitHeaders);
+      }, requestBody, ip, userAgent, startTime, rateLimit.headers);
     }
 
     // --- Generate case number ---
@@ -111,14 +71,7 @@ Deno.serve(async (req) => {
       .insert({
         organization_id: orgId,
         case_number: caseNumber,
-        category,
-        source,
-        severity,
-        description,
-        amount,
-        tags,
-        metadata,
-        owner,
+        category, source, severity, description, amount, tags, metadata, owner,
       })
       .select("id, case_number, status, severity, category, created_at")
       .single();
@@ -126,7 +79,7 @@ Deno.serve(async (req) => {
     if (caseErr) {
       return await logAndRespond(supabase, orgId, 500, {
         error: "Failed to create case", detail: caseErr.message,
-      }, requestBody, ip, userAgent, startTime, rateLimitHeaders);
+      }, requestBody, ip, userAgent, startTime, rateLimit.headers);
     }
 
     // --- Insert facts ---
@@ -154,7 +107,7 @@ Deno.serve(async (req) => {
       },
     };
 
-    // --- Fire webhooks with delivery logging ---
+    // --- Fire webhooks with retry ---
     fireWebhooks(supabase, orgId, newCase.id, {
       event: "case.ingested",
       timestamp: new Date().toISOString(),
@@ -169,7 +122,7 @@ Deno.serve(async (req) => {
       },
     }).catch(e => console.error("Webhook dispatch error:", e));
 
-    return await logAndRespond(supabase, orgId, 201, result, requestBody, ip, userAgent, startTime, rateLimitHeaders);
+    return await logAndRespond(supabase, orgId, 201, result, requestBody, ip, userAgent, startTime, rateLimit.headers);
   } catch (err) {
     return await logAndRespond(supabase, orgId, 500, {
       error: "Internal error", detail: String(err),
@@ -177,15 +130,8 @@ Deno.serve(async (req) => {
   }
 });
 
-function respond(status: number, body: Record<string, unknown>, extraHeaders?: Record<string, string>) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json", ...(extraHeaders || {}) },
-  });
-}
-
 async function logAndRespond(
-  supabase: ReturnType<typeof createClient>,
+  supabase: ReturnType<typeof createServiceClient>,
   orgId: string | null,
   status: number,
   body: Record<string, unknown>,
@@ -222,91 +168,4 @@ async function logAndRespond(
   }
 
   return respond(status, body, extraHeaders);
-}
-
-async function fireWebhooks(
-  supabase: ReturnType<typeof createClient>,
-  orgId: string,
-  caseId: string,
-  payload: Record<string, unknown>,
-) {
-  const { data: webhooks } = await supabase
-    .from("webhooks")
-    .select("id, url, signing_secret, enabled")
-    .eq("organization_id", orgId)
-    .eq("enabled", true);
-
-  if (!webhooks || webhooks.length === 0) return;
-
-  const rawBody = JSON.stringify(payload);
-
-  await Promise.allSettled(
-    webhooks.map(async (wh: any) => {
-      const deliveryStart = Date.now();
-      let statusCode: number | null = null;
-      let responseBody = "";
-      let errorMessage: string | null = null;
-      let deliveryStatus = "success";
-
-      try {
-        const headers: Record<string, string> = { "Content-Type": "application/json" };
-
-        if (wh.signing_secret) {
-          const encoder = new TextEncoder();
-          const key = await crypto.subtle.importKey(
-            "raw",
-            encoder.encode(wh.signing_secret),
-            { name: "HMAC", hash: "SHA-256" },
-            false,
-            ["sign"],
-          );
-          const sig = await crypto.subtle.sign("HMAC", key, encoder.encode(rawBody));
-          headers["x-webhook-signature"] = Array.from(new Uint8Array(sig))
-            .map(b => b.toString(16).padStart(2, "0"))
-            .join("");
-        }
-
-        const resp = await fetch(wh.url, {
-          method: "POST",
-          headers,
-          body: rawBody,
-          signal: AbortSignal.timeout(10000),
-        });
-
-        statusCode = resp.status;
-        responseBody = await resp.text().catch(() => "");
-
-        if (!resp.ok) {
-          deliveryStatus = "failed";
-          errorMessage = `HTTP ${resp.status} ${resp.statusText}`;
-          console.error(`Webhook ${wh.id} failed: ${resp.status} ${resp.statusText}`);
-        }
-      } catch (err) {
-        deliveryStatus = "failed";
-        errorMessage = String(err);
-        console.error(`Webhook ${wh.id} error:`, err);
-      }
-
-      const durationMs = Date.now() - deliveryStart;
-
-      // Log delivery attempt
-      try {
-        await supabase.from("webhook_delivery_logs").insert({
-          webhook_id: wh.id,
-          case_id: caseId,
-          organization_id: orgId,
-          event: "case.ingested",
-          status: deliveryStatus,
-          status_code: statusCode,
-          response_body: responseBody?.substring(0, 2000) || null,
-          error_message: errorMessage,
-          attempt: 1,
-          max_attempts: 1,
-          duration_ms: durationMs,
-        });
-      } catch (logErr) {
-        console.error("Failed to log webhook delivery:", logErr);
-      }
-    }),
-  );
 }

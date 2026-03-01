@@ -11,65 +11,15 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import {
-  ArrowLeft, AlertTriangle, CheckCircle2, Clock, Shield,
-  FileText, Zap, RotateCcw, BrainCircuit, Loader2, Play, Plus, Trash2, History
+  ArrowLeft, AlertTriangle, Shield,
+  FileText, Zap, RotateCcw, Loader2, Play, Plus, History
 } from 'lucide-react';
-import type { DecisionType, SeverityLevel, InferenceMode } from '@/lib/types';
+import type { InferenceMode } from '@/lib/types';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-
-const decisionIcons: Record<string, any> = {
-  approve: CheckCircle2, deny: AlertTriangle, flag: BrainCircuit, escalate: ArrowLeft,
-  review: FileText, request_info: FileText, route: Zap, monitor: BrainCircuit, unresolved: Clock,
-};
-
-const decisionColors: Record<DecisionType, string> = {
-  approve: 'success', deny: 'destructive', flag: 'warning', escalate: 'critical',
-  review: 'info', request_info: 'warning', route: 'secondary', monitor: 'secondary', unresolved: 'outline',
-};
-
-const severityColors: Record<SeverityLevel, string> = {
-  low: 'success', medium: 'warning', high: 'critical', critical: 'destructive',
-};
-
-function ConfidenceBreakdownViz({ breakdown }: { breakdown: any }) {
-  const items = [
-    { label: 'Rule Strength', value: breakdown.ruleStrength, color: 'bg-primary' },
-    { label: 'Corroborating Signals', value: breakdown.corroboratingSignals, color: 'bg-info' },
-    { label: 'Evidence Completeness', value: breakdown.evidenceCompleteness, color: 'bg-success' },
-    { label: 'Data Quality', value: breakdown.dataQuality, color: 'bg-primary' },
-    { label: 'Contradiction Penalty', value: breakdown.contradictionPenalty, color: 'bg-destructive', negative: true },
-    { label: 'Missing Fact Penalty', value: breakdown.missingFactPenalty, color: 'bg-warning', negative: true },
-  ];
-
-  return (
-    <div className="space-y-3">
-      {items.map(item => (
-        <div key={item.label}>
-    <div className="flex items-center justify-between mb-1">
-            <span className="text-body-sm text-muted-foreground">{item.label}</span>
-            <span className="text-caption font-mono text-foreground">
-              {item.negative ? '-' : '+'}{Math.abs(item.value).toFixed(0)}
-            </span>
-          </div>
-          <div className="w-full h-1.5 rounded-full bg-surface-3">
-            <div
-              className={`h-full rounded-full ${item.color} transition-all`}
-              style={{ width: `${Math.min(100, Math.abs(item.value))}%` }}
-            />
-          </div>
-        </div>
-      ))}
-      <div className="pt-3 border-t border-border flex items-center justify-between">
-        <span className="text-body-sm font-semibold text-foreground">Final Adjusted</span>
-        <span className="text-body-md font-semibold text-primary font-mono">
-          {breakdown.finalAdjusted.toFixed(1)}%
-        </span>
-      </div>
-    </div>
-  );
-}
+import { ConfidenceBreakdownViz } from '@/components/cases/ConfidenceBreakdownViz';
+import { decisionIcons, decisionColors, severityColors } from '@/components/cases/constants';
 
 export default function CaseDetail() {
   const { id } = useParams();
@@ -142,7 +92,7 @@ export default function CaseDetail() {
   }
 
   const ir = caseData.inferenceResult;
-  const DecIcon = ir ? (decisionIcons[ir.decision] || FileText) : Clock;
+  const DecIcon = ir ? (decisionIcons[ir.decision] || FileText) : FileText;
 
   return (
     <AppLayout>
@@ -172,18 +122,8 @@ export default function CaseDetail() {
                 <SelectItem value="assisted">AI Assisted</SelectItem>
               </SelectContent>
             </Select>
-            <Button
-              variant="hero"
-              size="sm"
-              className="gap-1.5"
-              onClick={handleRunInference}
-              disabled={runInference.isPending || caseData.facts.length === 0}
-            >
-              {runInference.isPending ? (
-                <><Loader2 className="w-3 h-3 animate-spin" /> Running...</>
-              ) : (
-                <><Play className="w-3 h-3" /> Run Inference</>
-              )}
+            <Button variant="hero" size="sm" className="gap-1.5" onClick={handleRunInference} disabled={runInference.isPending || caseData.facts.length === 0}>
+              {runInference.isPending ? <><Loader2 className="w-3 h-3 animate-spin" /> Running...</> : <><Play className="w-3 h-3" /> Run Inference</>}
             </Button>
             <Button variant="outline" size="sm" className="gap-1.5" onClick={handleRunInference} disabled={runInference.isPending}>
               <RotateCcw className="w-3 h-3" /> Re-run
@@ -229,7 +169,6 @@ export default function CaseDetail() {
                   </div>
                 )}
               </div>
-
               <div className="rounded-xl border border-border bg-gradient-card p-6">
                 <h3 className="text-body-md font-semibold text-foreground mb-4 flex items-center gap-2">
                   <Shield className="w-4 h-4 text-primary" /> Confidence
@@ -325,7 +264,6 @@ export default function CaseDetail() {
                 ) : (
                   <p className="text-body-sm text-muted-foreground">No facts recorded for this case yet. Add facts below to enable inference.</p>
                 )}
-                {/* Add fact form */}
                 <div className="mt-4 pt-4 border-t border-border space-y-3">
                   <h4 className="text-body-sm font-semibold text-foreground flex items-center gap-1.5">
                     <Plus className="w-3.5 h-3.5" /> Add Fact
