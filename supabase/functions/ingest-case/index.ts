@@ -154,8 +154,8 @@ Deno.serve(async (req) => {
       },
     };
 
-    // --- Fire webhooks (best-effort, non-blocking) ---
-    fireWebhooks(supabase, orgId, {
+    // --- Fire webhooks with delivery logging ---
+    fireWebhooks(supabase, orgId, newCase.id, {
       event: "case.ingested",
       timestamp: new Date().toISOString(),
       case: {
@@ -227,6 +227,7 @@ async function logAndRespond(
 async function fireWebhooks(
   supabase: ReturnType<typeof createClient>,
   orgId: string,
+  caseId: string,
   payload: Record<string, unknown>,
 ) {
   const { data: webhooks } = await supabase
@@ -241,32 +242,70 @@ async function fireWebhooks(
 
   await Promise.allSettled(
     webhooks.map(async (wh: any) => {
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      const deliveryStart = Date.now();
+      let statusCode: number | null = null;
+      let responseBody = "";
+      let errorMessage: string | null = null;
+      let deliveryStatus = "success";
 
-      if (wh.signing_secret) {
-        const encoder = new TextEncoder();
-        const key = await crypto.subtle.importKey(
-          "raw",
-          encoder.encode(wh.signing_secret),
-          { name: "HMAC", hash: "SHA-256" },
-          false,
-          ["sign"],
-        );
-        const sig = await crypto.subtle.sign("HMAC", key, encoder.encode(rawBody));
-        headers["x-webhook-signature"] = Array.from(new Uint8Array(sig))
-          .map(b => b.toString(16).padStart(2, "0"))
-          .join("");
+      try {
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+
+        if (wh.signing_secret) {
+          const encoder = new TextEncoder();
+          const key = await crypto.subtle.importKey(
+            "raw",
+            encoder.encode(wh.signing_secret),
+            { name: "HMAC", hash: "SHA-256" },
+            false,
+            ["sign"],
+          );
+          const sig = await crypto.subtle.sign("HMAC", key, encoder.encode(rawBody));
+          headers["x-webhook-signature"] = Array.from(new Uint8Array(sig))
+            .map(b => b.toString(16).padStart(2, "0"))
+            .join("");
+        }
+
+        const resp = await fetch(wh.url, {
+          method: "POST",
+          headers,
+          body: rawBody,
+          signal: AbortSignal.timeout(10000),
+        });
+
+        statusCode = resp.status;
+        responseBody = await resp.text().catch(() => "");
+
+        if (!resp.ok) {
+          deliveryStatus = "failed";
+          errorMessage = `HTTP ${resp.status} ${resp.statusText}`;
+          console.error(`Webhook ${wh.id} failed: ${resp.status} ${resp.statusText}`);
+        }
+      } catch (err) {
+        deliveryStatus = "failed";
+        errorMessage = String(err);
+        console.error(`Webhook ${wh.id} error:`, err);
       }
 
-      const resp = await fetch(wh.url, {
-        method: "POST",
-        headers,
-        body: rawBody,
-        signal: AbortSignal.timeout(10000),
-      });
+      const durationMs = Date.now() - deliveryStart;
 
-      if (!resp.ok) {
-        console.error(`Webhook ${wh.id} failed: ${resp.status} ${resp.statusText}`);
+      // Log delivery attempt
+      try {
+        await supabase.from("webhook_delivery_logs").insert({
+          webhook_id: wh.id,
+          case_id: caseId,
+          organization_id: orgId,
+          event: "case.ingested",
+          status: deliveryStatus,
+          status_code: statusCode,
+          response_body: responseBody?.substring(0, 2000) || null,
+          error_message: errorMessage,
+          attempt: 1,
+          max_attempts: 1,
+          duration_ms: durationMs,
+        });
+      } catch (logErr) {
+        console.error("Failed to log webhook delivery:", logErr);
       }
     }),
   );
