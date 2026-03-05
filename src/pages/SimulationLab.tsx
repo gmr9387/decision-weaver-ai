@@ -66,6 +66,8 @@ export default function SimulationLab() {
       });
       if (error) throw error;
       setSimResult(data as InferenceResult);
+      const firedCount = (data as any)?.firedRules?.filter((r: any) => r.fired).length || 0;
+      toast({ title: 'Simulation complete', description: `${firedCount} rule${firedCount !== 1 ? 's' : ''} fired.` });
     } catch (err: any) {
       toast({ title: 'Simulation failed', description: err?.message || 'Could not run simulation', variant: 'destructive' });
     } finally {
