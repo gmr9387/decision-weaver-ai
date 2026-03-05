@@ -106,13 +106,19 @@ export function useCases() {
         return MOCK_CASES;
       }
 
-      // Fetch latest inference run for each case
+      // Fetch latest inference run and facts for each case
       const caseIds = cases.map(c => c.id);
-      const { data: runs } = await supabase
-        .from('inference_runs')
-        .select('*')
-        .in('case_id', caseIds)
-        .order('created_at', { ascending: false });
+      const [{ data: runs }, { data: facts }] = await Promise.all([
+        supabase
+          .from('inference_runs')
+          .select('*')
+          .in('case_id', caseIds)
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('case_facts')
+          .select('*')
+          .in('case_id', caseIds),
+      ]);
 
       // Map latest run per case
       const latestRunMap = new Map<string, Tables<'inference_runs'>>();
@@ -124,7 +130,27 @@ export function useCases() {
         }
       }
 
-      return cases.map(c => dbCaseToCase(c, latestRunMap.get(c.id)));
+      // Map facts per case
+      const factsMap = new Map<string, Fact[]>();
+      if (facts) {
+        for (const f of facts) {
+          const arr = factsMap.get(f.case_id) || [];
+          arr.push({
+            key: f.fact_key,
+            value: f.fact_value as any,
+            source: f.source || 'Unknown',
+            quality: f.quality as Fact['quality'],
+            derived: f.is_derived || false,
+          });
+          factsMap.set(f.case_id, arr);
+        }
+      }
+
+      return cases.map(c => {
+        const caseObj = dbCaseToCase(c, latestRunMap.get(c.id));
+        caseObj.facts = factsMap.get(c.id) || [];
+        return caseObj;
+      });
     },
     staleTime: 30000,
   });
