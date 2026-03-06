@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Copy, Pencil, Shield, Trash2 } from 'lucide-react';
 import type { Rule } from '@/lib/types';
 import { typeColors } from './RuleListPanel';
+import { ConditionTreeView } from './ConditionTreeView';
 
 interface RuleDetailPanelProps {
   rule: Rule | null;
@@ -71,7 +72,7 @@ export function RuleDetailPanel({ rule, onEdit, onDuplicate, onDelete }: RuleDet
           <div className="space-y-4">
             <div className="rounded-xl border border-border bg-gradient-card p-6">
               <h3 className="text-body-md font-semibold text-foreground mb-3">Conditions</h3>
-              <div className="p-3 rounded-lg bg-surface-2 font-mono text-body-sm text-primary">{rule.conditions}</div>
+              <ConditionTreeView conditions={rule.conditions} />
             </div>
             <div className="rounded-xl border border-border bg-gradient-card p-6">
               <h3 className="text-body-md font-semibold text-foreground mb-3">Output</h3>
