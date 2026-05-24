@@ -14,7 +14,14 @@ interface Condition {
   any?: Condition[];
 }
 
-type Decision = "approve" | "deny" | "escalate" | "review" | "flag" | "request_info" | "unresolved";
+type Decision =
+  | "approve"
+  | "deny"
+  | "escalate"
+  | "review"
+  | "flag"
+  | "request_info"
+  | "unresolved";
 
 function safeJsonParse<T>(value: unknown, fallback: T): T {
   if (typeof value !== "string") return (value ?? fallback) as T;
@@ -25,15 +32,24 @@ function safeJsonParse<T>(value: unknown, fallback: T): T {
   }
 }
 
-function evaluateCondition(cond: Condition, facts: Record<string, unknown>): { met: boolean; label: string } {
+function evaluateCondition(
+  cond: Condition,
+  facts: Record<string, unknown>,
+): { met: boolean; label: string } {
   if (cond.all) {
     const results = cond.all.map((c) => evaluateCondition(c, facts));
-    return { met: results.every((r) => r.met), label: `ALL(${results.map((r) => r.label).join(", ")})` };
+    return {
+      met: results.every((r) => r.met),
+      label: `ALL(${results.map((r) => r.label).join(", ")})`,
+    };
   }
 
   if (cond.any) {
     const results = cond.any.map((c) => evaluateCondition(c, facts));
-    return { met: results.some((r) => r.met), label: `ANY(${results.map((r) => r.label).join(", ")})` };
+    return {
+      met: results.some((r) => r.met),
+      label: `ANY(${results.map((r) => r.label).join(", ")})`,
+    };
   }
 
   const factKey = cond.fact ?? "";
@@ -59,18 +75,30 @@ function evaluateCondition(cond: Condition, facts: Record<string, unknown>): { m
       return { met: String(actual) !== String(expected), label };
 
     case "greaterThan":
-      return { met: numericReady && numActual > numExpected, label: numericReady ? label : `${label} [non-numeric]` };
+      return {
+        met: numericReady && numActual > numExpected,
+        label: numericReady ? label : `${label} [non-numeric]`,
+      };
 
     case "greaterThanOrEqual":
     case "greaterThanInclusive":
-      return { met: numericReady && numActual >= numExpected, label: numericReady ? label : `${label} [non-numeric]` };
+      return {
+        met: numericReady && numActual >= numExpected,
+        label: numericReady ? label : `${label} [non-numeric]`,
+      };
 
     case "lessThan":
-      return { met: numericReady && numActual < numExpected, label: numericReady ? label : `${label} [non-numeric]` };
+      return {
+        met: numericReady && numActual < numExpected,
+        label: numericReady ? label : `${label} [non-numeric]`,
+      };
 
     case "lessThanOrEqual":
     case "lessThanInclusive":
-      return { met: numericReady && numActual <= numExpected, label: numericReady ? label : `${label} [non-numeric]` };
+      return {
+        met: numericReady && numActual <= numExpected,
+        label: numericReady ? label : `${label} [non-numeric]`,
+      };
 
     case "contains":
       return { met: String(actual).includes(String(expected)), label };
@@ -86,13 +114,20 @@ function evaluateCondition(cond: Condition, facts: Record<string, unknown>): { m
   }
 }
 
-function collectLeaves(c: Condition, facts: Record<string, unknown>): { met: boolean; label: string }[] {
+function collectLeaves(
+  c: Condition,
+  facts: Record<string, unknown>,
+): { met: boolean; label: string }[] {
   if (c.all) return c.all.flatMap((sub) => collectLeaves(sub, facts));
   if (c.any) return c.any.flatMap((sub) => collectLeaves(sub, facts));
   return [evaluateCondition(c, facts)];
 }
 
-function deriveDataQuality(facts: Record<string, unknown>, missingFacts: string[], evidenceRefs: string[]): number {
+function deriveDataQuality(
+  facts: Record<string, unknown>,
+  missingFacts: string[],
+  evidenceRefs: string[],
+): number {
   const factCount = Object.keys(facts).length;
   const completenessBase = factCount === 0 ? 15 : Math.min(100, 45 + factCount * 6);
   const missingPenalty = missingFacts.length * 12;
@@ -107,10 +142,18 @@ async function runAIAssisted(
   explanation: string,
   decision: string,
   confidence: number,
-): Promise<{ aiExplanation: string; aiSuggestedDecision?: string; aiConfidenceAdjust: number }> {
+): Promise<{
+  aiExplanation: string;
+  aiSuggestedDecision?: string;
+  aiConfidenceAdjust: number;
+}> {
   const apiKey = Deno.env.get("LOVABLE_API_KEY");
+
   if (!apiKey) {
-    return { aiExplanation: "AI key not configured. Deterministic engine result preserved.", aiConfidenceAdjust: 0 };
+    return {
+      aiExplanation: "AI key not configured. Deterministic engine result preserved.",
+      aiConfidenceAdjust: 0,
+    };
   }
 
   const prompt = `You are an expert case adjudication analyst.
@@ -154,7 +197,10 @@ Respond in JSON only:
     });
 
     if (!res.ok) {
-      return { aiExplanation: "AI service unavailable. Deterministic engine result preserved.", aiConfidenceAdjust: 0 };
+      return {
+        aiExplanation: "AI service unavailable. Deterministic engine result preserved.",
+        aiConfidenceAdjust: 0,
+      };
     }
 
     const data = await res.json();
@@ -162,17 +208,24 @@ Respond in JSON only:
     const jsonMatch = content.match(/\{[\s\S]*\}/);
 
     if (!jsonMatch) {
-      return { aiExplanation: content || "AI returned no structured assessment.", aiConfidenceAdjust: 0 };
+      return {
+        aiExplanation: content || "AI returned no structured assessment.",
+        aiConfidenceAdjust: 0,
+      };
     }
 
     const parsed = JSON.parse(jsonMatch[0]);
+
     return {
       aiExplanation: parsed.assessment || parsed.reasoning || content,
       aiSuggestedDecision: parsed.suggestedDecision,
       aiConfidenceAdjust: Math.max(-10, Math.min(10, Number(parsed.confidenceAdjustment || 0))),
     };
   } catch {
-    return { aiExplanation: "AI reasoning failed. Deterministic engine result preserved.", aiConfidenceAdjust: 0 };
+    return {
+      aiExplanation: "AI reasoning failed. Deterministic engine result preserved.",
+      aiConfidenceAdjust: 0,
+    };
   }
 }
 
@@ -181,6 +234,7 @@ Deno.serve(async (req) => {
 
   try {
     const authHeader = req.headers.get("Authorization");
+
     if (!authHeader) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
@@ -195,6 +249,7 @@ Deno.serve(async (req) => {
     );
 
     const { data: { user }, error: authError } = await supabase.auth.getUser();
+
     if (authError || !user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
@@ -215,6 +270,7 @@ Deno.serve(async (req) => {
       .single();
 
     const orgId = profile?.organization_id;
+
     if (!orgId) {
       return new Response(JSON.stringify({ error: "No organization" }), {
         status: 400,
@@ -253,7 +309,9 @@ Deno.serve(async (req) => {
     for (const rule of scopedRules) {
       const conditions = safeJsonParse<Condition>(rule.conditions, {});
       const output = safeJsonParse<Record<string, any>>(rule.output, {});
-      const rootCondition: Condition = conditions.all || conditions.any ? conditions : { all: [conditions] };
+      const rootCondition: Condition = conditions.all || conditions.any
+        ? conditions
+        : { all: [conditions] };
 
       const leafResults = collectLeaves(rootCondition, facts);
       const conditionsMet = leafResults.filter((r) => r.met).map((r) => r.label);
@@ -274,18 +332,20 @@ Deno.serve(async (req) => {
         firedRuleIds.push(rule.id);
         totalConfidenceImpact += Number(rule.confidence_impact || 0);
 
-        const decision = output?.decision || output?.action;
-        if (decision) {
+        const ruleDecision = output?.decision || output?.action;
+
+        if (ruleDecision) {
           const weight = Math.max(1, 11 - Number(rule.priority || 10));
-          decisionVotes[decision] = (decisionVotes[decision] || 0) + weight;
+          decisionVotes[ruleDecision] = (decisionVotes[ruleDecision] || 0) + weight;
         }
 
         if (output?.evidence) evidenceRefs.push(output.evidence);
       }
 
-      let explanation = rule.explanation_template || "";
+      let ruleExplanation = rule.explanation_template || "";
+
       for (const [k, v] of Object.entries(facts)) {
-        explanation = explanation.replaceAll(`{{${k}}}`, String(v));
+        ruleExplanation = ruleExplanation.replaceAll(`{{${k}}}`, String(v));
       }
 
       firedRules.push({
@@ -298,7 +358,7 @@ Deno.serve(async (req) => {
         conditionsUnmet,
         output,
         confidenceImpact: Number(rule.confidence_impact || 0),
-        explanation: fired ? explanation : "",
+        explanation: fired ? ruleExplanation : "",
       });
     }
 
@@ -313,7 +373,9 @@ Deno.serve(async (req) => {
 
     const totalRules = scopedRules.length;
     const ruleStrength = totalRules > 0 ? (firedCount / totalRules) * 100 : 0;
-    const evidenceCompleteness = missingFacts.length === 0 ? 100 : Math.max(0, 100 - missingFacts.length * 15);
+    const evidenceCompleteness = missingFacts.length === 0
+      ? 100
+      : Math.max(0, 100 - missingFacts.length * 15);
     const dataQuality = deriveDataQuality(facts, missingFacts, evidenceRefs);
     const contradictionPenalty = contradictions.length * 15;
     const missingFactPenalty = missingFacts.length * 8;
@@ -326,11 +388,17 @@ Deno.serve(async (req) => {
       dataQuality * 0.15 +
       totalConfidenceImpact * 0.15;
 
-    let finalConfidence = Math.max(5, Math.min(99, rawConfidence - contradictionPenalty - missingFactPenalty));
+    let finalConfidence = Math.max(
+      5,
+      Math.min(99, rawConfidence - contradictionPenalty - missingFactPenalty),
+    );
 
     let decision: Decision = "unresolved";
+
     if (uniqueDecisions.length > 0) {
-      decision = uniqueDecisions.reduce((a, b) => decisionVotes[a] >= decisionVotes[b] ? a : b) as Decision;
+      decision = uniqueDecisions.reduce((a, b) =>
+        decisionVotes[a] >= decisionVotes[b] ? a : b
+      ) as Decision;
     }
 
     if (contradictions.length > 0 && finalConfidence < 70) {
@@ -345,7 +413,10 @@ Deno.serve(async (req) => {
       decision = "review";
     }
 
-    const firedExplanations = firedRules.filter((r) => r.fired && r.explanation).map((r) => r.explanation);
+    const firedExplanations = firedRules
+      .filter((r) => r.fired && r.explanation)
+      .map((r) => r.explanation);
+
     let explanation = firedExplanations.length > 0
       ? firedExplanations.join(" ")
       : `${firedCount} of ${totalRules} organization-scoped rules fired. Deterministic decision: ${decision}.`;
@@ -356,6 +427,7 @@ Deno.serve(async (req) => {
 
     if (mode === "assisted") {
       const ai = await runAIAssisted(facts, firedRules, explanation, decision, finalConfidence);
+
       aiAssessment = ai.aiExplanation;
       aiSuggestedDecision = ai.aiSuggestedDecision;
       aiConfidenceAdjustment = ai.aiConfidenceAdjust;
@@ -383,9 +455,51 @@ Deno.serve(async (req) => {
         : "medium";
 
     const totalVotes = Object.values(decisionVotes).reduce((a, b) => a + b, 0) || 1;
+
     const candidateDecisions = Object.entries(decisionVotes)
-      .map(([d, v]) => ({ decision: d, score: Math.round((v / totalVotes) * 100) }))
+      .map(([d, v]) => ({
+        decision: d,
+        score: Math.round((v / totalVotes) * 100),
+      }))
       .sort((a, b) => b.score - a.score);
+
+    const traceId = crypto.randomUUID();
+
+    const decisionTrace = {
+      traceId,
+      organizationId: orgId,
+      caseId: caseId ?? null,
+      evaluatedAt: new Date().toISOString(),
+      mode,
+      deterministicDecision: decision,
+      deterministicDecisionPreserved: true,
+      rulesEvaluated: totalRules,
+      rulesFired: firedCount,
+      firedRuleIds,
+      missingFacts,
+      contradictions,
+      evidenceRefs,
+      candidateDecisions,
+      confidenceInputs: {
+        ruleStrength: Math.round(ruleStrength * 10) / 10,
+        corroboratingSignals: Math.round(corroboratingSignals * 10) / 10,
+        evidenceCompleteness: Math.round(evidenceCompleteness * 10) / 10,
+        dataQuality: Math.round(dataQuality * 10) / 10,
+        contradictionPenalty,
+        missingFactPenalty,
+        aiConfidenceAdjustment,
+      },
+      ruleTrace: firedRules.map((rule) => ({
+        ruleId: rule.ruleId,
+        name: rule.name,
+        priority: rule.priority,
+        fired: rule.fired,
+        conditionsMet: rule.conditionsMet,
+        conditionsUnmet: rule.conditionsUnmet,
+        confidenceImpact: rule.confidenceImpact,
+        explanation: rule.explanation,
+      })),
+    };
 
     const result = {
       decision,
@@ -410,6 +524,7 @@ Deno.serve(async (req) => {
       evidenceRefs,
       mode,
       deterministicDecisionPreserved: true,
+      decisionTrace,
       ...(aiAssessment ? { aiAssessment, aiSuggestedDecision } : {}),
     };
 
@@ -430,6 +545,8 @@ Deno.serve(async (req) => {
         contradictions,
         evidence_refs: evidenceRefs,
         input_snapshot: facts,
+        decision_trace: decisionTrace,
+        trace_id: traceId,
       });
 
       if (insertError) console.error("Failed to persist inference run:", insertError);
