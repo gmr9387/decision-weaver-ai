@@ -1,75 +1,167 @@
-import { Badge } from '@/components/ui/badge';
-import { TabsContent } from '@/components/ui/tabs';
-import { History } from 'lucide-react';
-import { decisionColors } from './constants';
+import {
+  Shield,
+  Database,
+  CheckCircle2,
+  AlertTriangle,
+  GitBranch,
+  TrendingUp,
+} from 'lucide-react';
 
-interface InferenceHistoryRun {
-  id: string;
-  decision: string;
-  confidence: number;
-  confidenceBand: string;
-  mode: string;
-  explanation: string;
-  firedRulesCount: number;
-  totalRules: number;
-  missingFacts: string[];
-  contradictions: string[];
-  createdAt: string;
+interface Props {
+  breakdown: any;
 }
 
-interface HistoryTabProps {
-  inferenceHistory: InferenceHistoryRun[];
-}
-
-export function HistoryTab({ inferenceHistory }: HistoryTabProps) {
-  return (
-    <TabsContent value="history" className="space-y-4">
-      <div className="rounded-xl border border-border bg-gradient-card p-6">
-        <h3 className="text-body-md font-semibold text-foreground mb-4 flex items-center gap-2">
-          <History className="w-4 h-4 text-primary" /> Inference History
-        </h3>
-        {inferenceHistory.length > 0 ? (
-          <div className="space-y-3">
-            {inferenceHistory.map((run, idx) => {
-              const prevRun = inferenceHistory[idx + 1];
-              const decisionChanged = prevRun && prevRun.decision !== run.decision;
-              const confidenceDelta = prevRun ? run.confidence - prevRun.confidence : null;
-              return (
-                <div key={run.id} className={`p-4 rounded-lg border ${idx === 0 ? 'border-primary/30 bg-primary/5' : 'border-border bg-surface-2'}`}>
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      {idx === 0 && <Badge variant="default" className="text-caption">Latest</Badge>}
-                      <Badge variant={(decisionColors as any)[run.decision] || 'secondary'} className="capitalize">{run.decision.replace('_', ' ')}</Badge>
-                      <span className="text-body-sm font-mono text-foreground">{run.confidence.toFixed(1)}%</span>
-                      {confidenceDelta !== null && (
-                        <span className={`text-caption font-mono ${confidenceDelta >= 0 ? 'text-success' : 'text-destructive'}`}>
-                          ({confidenceDelta >= 0 ? '+' : ''}{confidenceDelta.toFixed(1)})
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-caption text-muted-foreground">{new Date(run.createdAt).toLocaleString()}</span>
-                  </div>
-                  {decisionChanged && (
-                    <div className="mb-2 px-2 py-1 rounded bg-warning/10 border border-warning/20 text-caption text-warning">
-                      Decision changed from <span className="font-semibold capitalize">{prevRun.decision}</span> → <span className="font-semibold capitalize">{run.decision}</span>
-                    </div>
-                  )}
-                  <p className="text-caption text-muted-foreground line-clamp-2">{run.explanation}</p>
-                  <div className="flex items-center gap-3 mt-2 text-caption text-muted-foreground">
-                    <span>Mode: <span className="text-foreground capitalize">{run.mode}</span></span>
-                    <span>Rules: <span className="text-foreground">{run.firedRulesCount}/{run.totalRules}</span></span>
-                    <span>Band: <span className="text-foreground capitalize">{run.confidenceBand}</span></span>
-                    {run.missingFacts.length > 0 && <Badge variant="warning" className="text-caption">{run.missingFacts.length} missing</Badge>}
-                    {run.contradictions.length > 0 && <Badge variant="critical" className="text-caption">{run.contradictions.length} conflicts</Badge>}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <p className="text-body-sm text-muted-foreground">No inference runs recorded yet. Run inference to see history.</p>
-        )}
+export function ConfidenceBreakdownViz({ breakdown }: Props) {
+  if (!breakdown) {
+    return (
+      <div className="text-body-sm text-muted-foreground">
+        No confidence data available.
       </div>
-    </TabsContent>
+    );
+  }
+
+  const items = [
+    {
+      label: 'Rule Strength',
+      icon: Shield,
+      value: breakdown.ruleStrength ?? 0,
+      positive: true,
+      description: 'How strongly the rules support the decision',
+    },
+    {
+      label: 'Corroboration',
+      icon: CheckCircle2,
+      value: breakdown.corroboratingSignals ?? 0,
+      positive: true,
+      description: 'Multiple rules agreeing on outcome',
+    },
+    {
+      label: 'Evidence',
+      icon: Database,
+      value: breakdown.evidenceCompleteness ?? 0,
+      positive: true,
+      description: 'Evidence and documentation coverage',
+    },
+    {
+      label: 'Data Quality',
+      icon: TrendingUp,
+      value: breakdown.dataQuality ?? 0,
+      positive: true,
+      description: 'Quality and completeness of input facts',
+    },
+    {
+      label: 'Contradictions',
+      icon: GitBranch,
+      value: breakdown.contradictionPenalty ?? 0,
+      positive: false,
+      description: 'Conflicting rule outcomes',
+    },
+    {
+      label: 'Missing Facts',
+      icon: AlertTriangle,
+      value: breakdown.missingFactPenalty ?? 0,
+      positive: false,
+      description: 'Required facts not supplied',
+    },
+  ];
+
+  const finalScore = breakdown.finalAdjusted ?? 0;
+
+  const scoreColor =
+    finalScore >= 85
+      ? 'text-success'
+      : finalScore >= 65
+      ? 'text-primary'
+      : finalScore >= 40
+      ? 'text-warning'
+      : 'text-destructive';
+
+  return (
+    <div className="space-y-4">
+      {/* Score Card */}
+      <div className="rounded-xl border border-border bg-surface-2 p-4 text-center">
+        <p className="text-caption uppercase tracking-wide text-muted-foreground mb-1">
+          Decision Confidence
+        </p>
+
+        <div className={`text-4xl font-bold font-mono ${scoreColor}`}>
+          {finalScore.toFixed(1)}%
+        </div>
+
+        <div className="mt-2 h-2 rounded-full bg-surface-3 overflow-hidden">
+          <div
+            className="h-full bg-primary transition-all duration-500"
+            style={{ width: `${Math.min(100, finalScore)}%` }}
+          />
+        </div>
+      </div>
+
+      {/* Decision DNA */}
+      <div className="space-y-3">
+        {items.map((item) => {
+          const Icon = item.icon;
+
+          return (
+            <div
+              key={item.label}
+              className="rounded-lg border border-border bg-surface-2 p-3"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <Icon className="w-4 h-4 text-primary" />
+                  <span className="text-body-sm font-medium text-foreground">
+                    {item.label}
+                  </span>
+                </div>
+
+                <span
+                  className={`font-mono text-sm ${
+                    item.positive
+                      ? 'text-success'
+                      : 'text-destructive'
+                  }`}
+                >
+                  {item.positive ? '+' : '-'}
+                  {Math.abs(item.value).toFixed(0)}
+                </span>
+              </div>
+
+              <div className="h-1.5 rounded-full bg-surface-3 overflow-hidden">
+                <div
+                  className={`h-full transition-all duration-500 ${
+                    item.positive
+                      ? 'bg-primary'
+                      : 'bg-destructive'
+                  }`}
+                  style={{
+                    width: `${Math.min(
+                      100,
+                      Math.abs(item.value)
+                    )}%`,
+                  }}
+                />
+              </div>
+
+              <p className="mt-2 text-caption text-muted-foreground">
+                {item.description}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Engine Summary */}
+      <div className="rounded-lg border border-primary/20 bg-primary/5 p-3">
+        <div className="text-caption font-semibold text-primary mb-1">
+          Decision DNA Summary
+        </div>
+
+        <p className="text-caption text-muted-foreground">
+          Confidence is derived from rule strength, corroboration,
+          evidence completeness, and data quality, then adjusted for
+          contradictions and missing information.
+        </p>
+      </div>
+    </div>
   );
 }
