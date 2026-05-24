@@ -32,6 +32,13 @@ function safeJsonParse<T>(value: unknown, fallback: T): T {
   }
 }
 
+function isPopulated(value: unknown): boolean {
+  if (value === null || value === undefined) return false;
+  if (typeof value === "string" && value.trim() === "") return false;
+  if (Array.isArray(value) && value.length === 0) return false;
+  return true;
+}
+
 function evaluateCondition(
   cond: Condition,
   facts: Record<string, unknown>,
@@ -75,30 +82,18 @@ function evaluateCondition(
       return { met: String(actual) !== String(expected), label };
 
     case "greaterThan":
-      return {
-        met: numericReady && numActual > numExpected,
-        label: numericReady ? label : `${label} [non-numeric]`,
-      };
+      return { met: numericReady && numActual > numExpected, label: numericReady ? label : `${label} [non-numeric]` };
 
     case "greaterThanOrEqual":
     case "greaterThanInclusive":
-      return {
-        met: numericReady && numActual >= numExpected,
-        label: numericReady ? label : `${label} [non-numeric]`,
-      };
+      return { met: numericReady && numActual >= numExpected, label: numericReady ? label : `${label} [non-numeric]` };
 
     case "lessThan":
-      return {
-        met: numericReady && numActual < numExpected,
-        label: numericReady ? label : `${label} [non-numeric]`,
-      };
+      return { met: numericReady && numActual < numExpected, label: numericReady ? label : `${label} [non-numeric]` };
 
     case "lessThanOrEqual":
     case "lessThanInclusive":
-      return {
-        met: numericReady && numActual <= numExpected,
-        label: numericReady ? label : `${label} [non-numeric]`,
-      };
+      return { met: numericReady && numActual <= numExpected, label: numericReady ? label : `${label} [non-numeric]` };
 
     case "contains":
       return { met: String(actual).includes(String(expected)), label };
@@ -128,12 +123,24 @@ function deriveDataQuality(
   missingFacts: string[],
   evidenceRefs: string[],
 ): number {
-  const factCount = Object.keys(facts).length;
-  const completenessBase = factCount === 0 ? 15 : Math.min(100, 45 + factCount * 6);
-  const missingPenalty = missingFacts.length * 12;
-  const evidenceBoost = Math.min(20, evidenceRefs.length * 5);
+  const totalFacts = Object.keys(facts).length;
+  const populatedFacts = Object.values(facts).filter(isPopulated).length;
 
-  return Math.max(5, Math.min(100, completenessBase + evidenceBoost - missingPenalty));
+  const populationScore =
+    totalFacts > 0 ? Math.round((populatedFacts / totalFacts) * 100) : 0;
+
+  const missingPenalty = missingFacts.length * 10;
+  const evidenceBoost = Math.min(15, evidenceRefs.length * 3);
+
+  return Math.max(0, Math.min(100, populationScore + evidenceBoost - missingPenalty));
+}
+
+function deriveCorroboratingSignals(firedRules: any[]): number {
+  const critical = firedRules.filter((r) => r.fired && Number(r.priority) <= 2).length;
+  const high = firedRules.filter((r) => r.fired && Number(r.priority) > 2 && Number(r.priority) <= 4).length;
+  const normal = firedRules.filter((r) => r.fired && Number(r.priority) > 4).length;
+
+  return Math.min(100, critical * 30 + high * 20 + normal * 8);
 }
 
 async function runAIAssisted(
@@ -376,21 +383,27 @@ Deno.serve(async (req) => {
     const evidenceCompleteness = missingFacts.length === 0
       ? 100
       : Math.max(0, 100 - missingFacts.length * 15);
+
     const dataQuality = deriveDataQuality(facts, missingFacts, evidenceRefs);
     const contradictionPenalty = contradictions.length * 15;
+    const contradictionSeverityPenalty =
+      contradictions.length > 3 ? 20 : contradictions.length > 1 ? 10 : 0;
     const missingFactPenalty = missingFacts.length * 8;
-    const corroboratingSignals = firedCount > 1 ? Math.min(100, firedCount * 20) : 0;
+    const corroboratingSignals = deriveCorroboratingSignals(firedRules);
 
     const rawConfidence =
-      ruleStrength * 0.3 +
-      corroboratingSignals * 0.2 +
+      ruleStrength * 0.25 +
+      corroboratingSignals * 0.25 +
       evidenceCompleteness * 0.2 +
       dataQuality * 0.15 +
       totalConfidenceImpact * 0.15;
 
     let finalConfidence = Math.max(
       5,
-      Math.min(99, rawConfidence - contradictionPenalty - missingFactPenalty),
+      Math.min(
+        99,
+        rawConfidence - contradictionPenalty - contradictionSeverityPenalty - missingFactPenalty,
+      ),
     );
 
     let decision: Decision = "unresolved";
@@ -401,11 +414,11 @@ Deno.serve(async (req) => {
       ) as Decision;
     }
 
-    if (contradictions.length > 0 && finalConfidence < 70) {
+    if (contradictions.length > 0 && finalConfidence < 75) {
       decision = "review";
     }
 
-    if (missingFacts.length > 0 && finalConfidence < 50 && decision !== "deny" && decision !== "escalate") {
+    if (missingFacts.length > 0 && finalConfidence < 55 && decision !== "deny" && decision !== "escalate") {
       decision = "request_info";
     }
 
@@ -486,6 +499,7 @@ Deno.serve(async (req) => {
         evidenceCompleteness: Math.round(evidenceCompleteness * 10) / 10,
         dataQuality: Math.round(dataQuality * 10) / 10,
         contradictionPenalty,
+        contradictionSeverityPenalty,
         missingFactPenalty,
         aiConfidenceAdjustment,
       },
@@ -514,6 +528,7 @@ Deno.serve(async (req) => {
         evidenceCompleteness: Math.round(evidenceCompleteness * 10) / 10,
         dataQuality: Math.round(dataQuality * 10) / 10,
         contradictionPenalty,
+        contradictionSeverityPenalty,
         missingFactPenalty,
         aiConfidenceAdjustment,
         finalAdjusted: Math.round(finalConfidence * 10) / 10,
