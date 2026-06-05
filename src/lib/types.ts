@@ -39,6 +39,13 @@ export type RuleType =
   | 'routing'
   | 'explainability';
 
+export type CaseOutcomeType =
+  | 'confirmed_correct'
+  | 'incorrect'
+  | 'partially_correct'
+  | 'needs_more_info'
+  | 'overturned';
+
 export interface Fact {
   key: string;
   value: string | number | boolean;
@@ -49,6 +56,17 @@ export interface Fact {
 
 export interface FiredRule {
   ruleId: string;
+  rule_id?: string;
+
+  ruleName?: string;
+  rule_name?: string;
+
+  ruleVersion?: number;
+  rule_version?: number;
+
+  ruleSnapshotId?: string | null;
+  rule_snapshot_id?: string | null;
+
   name: string;
   type: RuleType;
   priority: number;
@@ -84,6 +102,28 @@ export interface CandidateDecision {
   score: number;
 }
 
+export interface DecisionTraceRule {
+  ruleId: string;
+  rule_id?: string;
+
+  ruleName?: string;
+  rule_name?: string;
+
+  ruleVersion?: number;
+  rule_version?: number;
+
+  ruleSnapshotId?: string | null;
+  rule_snapshot_id?: string | null;
+
+  name: string;
+  priority: number;
+  fired: boolean;
+  conditionsMet: string[];
+  conditionsUnmet: string[];
+  confidenceImpact: number;
+  explanation: string;
+}
+
 export interface DecisionTrace {
   traceId: string;
   organizationId?: string;
@@ -110,20 +150,12 @@ export interface DecisionTrace {
     evidenceCompleteness: number;
     dataQuality: number;
     contradictionPenalty: number;
+    contradictionSeverityPenalty?: number;
     missingFactPenalty: number;
     aiConfidenceAdjustment?: number;
   };
 
-  ruleTrace: {
-    ruleId: string;
-    name: string;
-    priority: number;
-    fired: boolean;
-    conditionsMet: string[];
-    conditionsUnmet: string[];
-    confidenceImpact: number;
-    explanation: string;
-  }[];
+  ruleTrace: DecisionTraceRule[];
 }
 
 export interface InferenceResult {
@@ -158,6 +190,9 @@ export interface InferenceResult {
 
 export interface Case {
   id: string;
+  organizationId?: string | null;
+  organization_id?: string | null;
+
   caseNumber: string;
 
   category: string;
@@ -218,6 +253,38 @@ export interface Rule {
   lastModified: string;
 
   hitCount: number;
+}
+
+export interface RuleVersion {
+  id: string;
+  organization_id?: string | null;
+  rule_id: string;
+  version: number;
+  name: string;
+  description: string | null;
+  category: string;
+  rule_type: RuleType;
+  priority: number;
+  enabled: boolean;
+  conditions: unknown;
+  output: unknown;
+  confidence_impact: number | null;
+  explanation_template: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface CaseOutcome {
+  id: string;
+  organization_id: string;
+  case_id: string;
+  expected_decision: DecisionType | string | null;
+  actual_outcome: CaseOutcomeType;
+  confidence_at_label: number | null;
+  notes: string | null;
+  labeled_by: string | null;
+  labeled_at: string;
+  updated_at: string;
 }
 
 export interface DailyMetric {
