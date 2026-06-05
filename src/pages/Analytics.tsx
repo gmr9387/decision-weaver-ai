@@ -1,5 +1,7 @@
+import { useQuery } from '@tanstack/react-query';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useCases, useRules, useMetrics } from '@/hooks/use-data';
+import { supabase } from '@/integrations/supabase/client';
 import { Badge } from '@/components/ui/badge';
 import {
   BarChart,
@@ -19,7 +21,19 @@ import {
   Brain,
   GitBranch,
   Activity,
+  Target,
+  CheckCircle2,
+  XCircle,
 } from 'lucide-react';
+
+type CaseOutcome = {
+  id: string;
+  case_id: string;
+  expected_decision: string | null;
+  actual_outcome: string;
+  confidence_at_label: number | null;
+  labeled_at: string;
+};
 
 function asArray(value: unknown): any[] {
   return Array.isArray(value) ? value : [];
@@ -71,9 +85,43 @@ export default function Analytics() {
   const { data: rules = [] } = useRules();
   const { data: metrics = [] } = useMetrics();
 
+  const { data: outcomes = [] } = useQuery({
+    queryKey: ['case-outcomes-analytics'],
+    queryFn: async (): Promise<CaseOutcome[]> => {
+      const { data, error } = await supabase
+        .from('case_outcomes' as any)
+        .select('id, case_id, expected_decision, actual_outcome, confidence_at_label, labeled_at')
+        .order('labeled_at', { ascending: false });
+
+      if (error) throw new Error(error.message);
+      return (data || []) as CaseOutcome[];
+    },
+    staleTime: 30000,
+  });
+
   const casesWithInference = cases.filter((c: any) => Boolean(getInference(c)));
   const enabledRules = rules.filter((r: any) => r.enabled);
   const totalRules = rules.length;
+
+  const outcomeMap = new Map(outcomes.map((o) => [o.case_id, o]));
+  const labeledCases = cases.filter((c: any) => outcomeMap.has(c.id));
+  const unlabeledInferredCases = casesWithInference.filter((c: any) => !outcomeMap.has(c.id));
+
+  const correctOutcomes = outcomes.filter((o) => o.actual_outcome === 'confirmed_correct').length;
+  const incorrectOutcomes = outcomes.filter((o) => o.actual_outcome === 'incorrect' || o.actual_outcome === 'overturned').length;
+  const partialOutcomes = outcomes.filter((o) => o.actual_outcome === 'partially_correct').length;
+
+  const accuracyRate =
+    outcomes.length > 0 ? Math.round((correctOutcomes / outcomes.length) * 100) : 0;
+
+  const outcomeDist = Object.entries(
+    outcomes.reduce<Record<string, number>>((acc, o) => {
+      acc[o.actual_outcome] = (acc[o.actual_outcome] || 0) + 1;
+      return acc;
+    }, {}),
+  )
+    .map(([name, value]) => ({ name: name.replaceAll('_', ' '), value }))
+    .sort((a, b) => b.value - a.value);
 
   const decisionDist = Object.entries(
     casesWithInference.reduce<Record<string, number>>((acc, c: any) => {
@@ -179,10 +227,10 @@ export default function Analytics() {
       detail: `${topContradictions.length} contradiction pattern${topContradictions.length !== 1 ? 's' : ''}`,
     },
     {
-      label: 'Rule coverage',
-      value: `${enabledRules.length}/${totalRules}`,
-      status: enabledRules.length === 0 ? 'warning' : 'stable',
-      detail: 'Enabled rules available to the inference engine',
+      label: 'Outcome coverage',
+      value: `${labeledCases.length}/${casesWithInference.length}`,
+      status: unlabeledInferredCases.length > 0 ? 'warning' : 'stable',
+      detail: `${unlabeledInferredCases.length} inferred case${unlabeledInferredCases.length !== 1 ? 's' : ''} still unlabeled`,
     },
   ];
 
@@ -192,11 +240,17 @@ export default function Analytics() {
         <div>
           <h1 className="text-display-sm text-foreground">Analytics</h1>
           <p className="text-body-sm text-muted-foreground mt-1">
-            Executive intelligence across decisions, rules, confidence, evidence gaps, and contradiction patterns.
+            Executive intelligence across decisions, outcomes, rules, confidence, evidence gaps, and contradiction patterns.
           </p>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <StatCard
+            title="Decision accuracy"
+            value={outcomes.length > 0 ? `${accuracyRate}%` : '—'}
+            detail={`${outcomes.length} labeled outcome${outcomes.length !== 1 ? 's' : ''}`}
+            icon={<Target className="w-4 h-4" />}
+          />
           <StatCard
             title="Cases analyzed"
             value={casesWithInference.length}
@@ -210,16 +264,31 @@ export default function Analytics() {
             icon={<ShieldCheck className="w-4 h-4" />}
           />
           <StatCard
-            title="Escalation rate"
-            value={`${escalationRate}%`}
-            detail="Share of inferred cases escalated"
-            icon={<AlertTriangle className="w-4 h-4" />}
-          />
-          <StatCard
             title="Enabled rules"
             value={enabledRules.length}
             detail={`${totalRules} total rules configured`}
             icon={<GitBranch className="w-4 h-4" />}
+          />
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-3">
+          <StatCard
+            title="Confirmed correct"
+            value={correctOutcomes}
+            detail="Decisions labeled correct"
+            icon={<CheckCircle2 className="w-4 h-4" />}
+          />
+          <StatCard
+            title="Incorrect / overturned"
+            value={incorrectOutcomes}
+            detail="Decisions labeled wrong or overturned"
+            icon={<XCircle className="w-4 h-4" />}
+          />
+          <StatCard
+            title="Partially correct"
+            value={partialOutcomes}
+            detail="Decisions labeled partially correct"
+            icon={<AlertTriangle className="w-4 h-4" />}
           />
         </div>
 
@@ -241,6 +310,21 @@ export default function Analytics() {
         </div>
 
         <div className="grid lg:grid-cols-2 gap-4">
+          <div className="rounded-xl border border-border bg-gradient-card p-6">
+            <h3 className="text-body-md font-semibold text-foreground mb-4 flex items-center gap-2">
+              <Target className="w-4 h-4 text-primary" /> Outcome Distribution
+            </h3>
+            <ResponsiveContainer width="100%" height={250}>
+              <BarChart data={outcomeDist} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(222, 15%, 14%)" />
+                <XAxis type="number" tick={{ fill: 'hsl(215, 15%, 55%)', fontSize: 11 }} />
+                <YAxis type="category" dataKey="name" width={140} tick={{ fill: 'hsl(215, 15%, 55%)', fontSize: 11 }} />
+                <Tooltip contentStyle={{ background: 'hsl(222, 20%, 10%)', border: '1px solid hsl(222, 15%, 18%)', borderRadius: 8, fontSize: 12 }} />
+                <Bar dataKey="value" fill="hsl(185, 85%, 48%)" radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
           <div className="rounded-xl border border-border bg-gradient-card p-6">
             <h3 className="text-body-md font-semibold text-foreground mb-4 flex items-center gap-2">
               <Activity className="w-4 h-4 text-primary" /> Decision Distribution
@@ -315,7 +399,9 @@ export default function Analytics() {
               </BarChart>
             </ResponsiveContainer>
           </div>
+        </div>
 
+        <div className="grid lg:grid-cols-2 gap-4">
           <div className="rounded-xl border border-border bg-gradient-card p-6">
             <h3 className="text-body-md font-semibold text-foreground mb-4 flex items-center gap-2">
               <FileSearch className="w-4 h-4 text-warning" /> Most Common Missing Facts
@@ -325,15 +411,7 @@ export default function Analytics() {
                 topMissing.map(([fact, count]) => (
                   <div key={fact} className="flex items-center justify-between p-3 rounded-lg bg-surface-2">
                     <span className="text-body-sm font-mono text-foreground">{fact}</span>
-                    <div className="flex items-center gap-2">
-                      <div className="w-24 h-1.5 rounded-full bg-surface-3">
-                        <div
-                          className="h-full rounded-full bg-warning"
-                          style={{ width: `${topMissing[0] ? (count / topMissing[0][1]) * 100 : 0}%` }}
-                        />
-                      </div>
-                      <Badge variant="secondary" className="font-mono text-caption">{count}</Badge>
-                    </div>
+                    <Badge variant="secondary" className="font-mono text-caption">{count}</Badge>
                   </div>
                 ))
               ) : (
@@ -343,26 +421,25 @@ export default function Analytics() {
               )}
             </div>
           </div>
-        </div>
 
-        <div className="rounded-xl border border-border bg-gradient-card p-6">
-          <h3 className="text-body-md font-semibold text-foreground mb-4 flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-warning" /> Contradiction Patterns
-          </h3>
-
-          <div className="space-y-3">
-            {topContradictions.length > 0 ? (
-              topContradictions.map(([pattern, count]) => (
-                <div key={pattern} className="flex items-center justify-between gap-4 p-3 rounded-lg bg-surface-2">
-                  <span className="text-body-sm text-foreground">{pattern}</span>
-                  <Badge variant="warning" className="font-mono text-caption">{count}</Badge>
-                </div>
-              ))
-            ) : (
-              <p className="text-body-sm text-muted-foreground">
-                No recurring contradiction patterns detected.
-              </p>
-            )}
+          <div className="rounded-xl border border-border bg-gradient-card p-6">
+            <h3 className="text-body-md font-semibold text-foreground mb-4 flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-warning" /> Contradiction Patterns
+            </h3>
+            <div className="space-y-3">
+              {topContradictions.length > 0 ? (
+                topContradictions.map(([pattern, count]) => (
+                  <div key={pattern} className="flex items-center justify-between gap-4 p-3 rounded-lg bg-surface-2">
+                    <span className="text-body-sm text-foreground">{pattern}</span>
+                    <Badge variant="warning" className="font-mono text-caption">{count}</Badge>
+                  </div>
+                ))
+              ) : (
+                <p className="text-body-sm text-muted-foreground">
+                  No recurring contradiction patterns detected.
+                </p>
+              )}
+            </div>
           </div>
         </div>
       </div>
