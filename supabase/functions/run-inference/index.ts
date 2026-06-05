@@ -23,6 +23,12 @@ type Decision =
   | "request_info"
   | "unresolved";
 
+type RuleVersionRef = {
+  id: string;
+  rule_id: string;
+  version: number;
+};
+
 function safeJsonParse<T>(value: unknown, fallback: T): T {
   if (typeof value !== "string") return (value ?? fallback) as T;
   try {
@@ -82,18 +88,30 @@ function evaluateCondition(
       return { met: String(actual) !== String(expected), label };
 
     case "greaterThan":
-      return { met: numericReady && numActual > numExpected, label: numericReady ? label : `${label} [non-numeric]` };
+      return {
+        met: numericReady && numActual > numExpected,
+        label: numericReady ? label : `${label} [non-numeric]`,
+      };
 
     case "greaterThanOrEqual":
     case "greaterThanInclusive":
-      return { met: numericReady && numActual >= numExpected, label: numericReady ? label : `${label} [non-numeric]` };
+      return {
+        met: numericReady && numActual >= numExpected,
+        label: numericReady ? label : `${label} [non-numeric]`,
+      };
 
     case "lessThan":
-      return { met: numericReady && numActual < numExpected, label: numericReady ? label : `${label} [non-numeric]` };
+      return {
+        met: numericReady && numActual < numExpected,
+        label: numericReady ? label : `${label} [non-numeric]`,
+      };
 
     case "lessThanOrEqual":
     case "lessThanInclusive":
-      return { met: numericReady && numActual <= numExpected, label: numericReady ? label : `${label} [non-numeric]` };
+      return {
+        met: numericReady && numActual <= numExpected,
+        label: numericReady ? label : `${label} [non-numeric]`,
+      };
 
     case "contains":
       return { met: String(actual).includes(String(expected)), label };
@@ -172,7 +190,7 @@ Facts:
 ${JSON.stringify(facts)}
 
 Rules fired:
-${firedRules.filter((r) => r.fired).map((r) => `${r.name} (priority ${r.priority})`).join(", ")}
+${firedRules.filter((r) => r.fired).map((r) => `${r.name} v${r.ruleVersion ?? "?"} (priority ${r.priority})`).join(", ")}
 
 Deterministic decision:
 ${decision}
@@ -303,6 +321,23 @@ Deno.serve(async (req) => {
       return !rule.organization_id || rule.organization_id === orgId;
     });
 
+    const ruleIds = scopedRules.map((rule: any) => rule.id);
+    const versionMap = new Map<string, RuleVersionRef>();
+
+    if (ruleIds.length > 0) {
+      const { data: versionRows } = await supabase
+        .from("rule_versions" as any)
+        .select("id, rule_id, version")
+        .in("rule_id", ruleIds)
+        .order("version", { ascending: false });
+
+      for (const version of (versionRows || []) as RuleVersionRef[]) {
+        if (!versionMap.has(version.rule_id)) {
+          versionMap.set(version.rule_id, version);
+        }
+      }
+    }
+
     const firedRules: any[] = [];
     const missingFacts: string[] = [];
     const contradictions: string[] = [];
@@ -314,6 +349,10 @@ Deno.serve(async (req) => {
     let firedCount = 0;
 
     for (const rule of scopedRules) {
+      const versionRef = versionMap.get(rule.id);
+      const liveRuleVersion = Number(rule.version || 1);
+      const ruleVersion = Number(versionRef?.version || liveRuleVersion || 1);
+
       const conditions = safeJsonParse<Condition>(rule.conditions, {});
       const output = safeJsonParse<Record<string, any>>(rule.output, {});
       const rootCondition: Condition = conditions.all || conditions.any
@@ -357,6 +396,14 @@ Deno.serve(async (req) => {
 
       firedRules.push({
         ruleId: rule.id,
+        rule_id: rule.id,
+        ruleName: rule.name,
+        rule_name: rule.name,
+        ruleVersion,
+        rule_version: ruleVersion,
+        ruleSnapshotId: versionRef?.id ?? null,
+        rule_snapshot_id: versionRef?.id ?? null,
+
         name: rule.name,
         type: rule.rule_type,
         priority: rule.priority,
@@ -505,6 +552,13 @@ Deno.serve(async (req) => {
       },
       ruleTrace: firedRules.map((rule) => ({
         ruleId: rule.ruleId,
+        rule_id: rule.rule_id,
+        ruleName: rule.ruleName,
+        rule_name: rule.rule_name,
+        ruleVersion: rule.ruleVersion,
+        rule_version: rule.rule_version,
+        ruleSnapshotId: rule.ruleSnapshotId,
+        rule_snapshot_id: rule.rule_snapshot_id,
         name: rule.name,
         priority: rule.priority,
         fired: rule.fired,
