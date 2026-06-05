@@ -15,7 +15,7 @@ import type { Tables } from '@/integrations/supabase/types';
 const DEMO_MODE =
   String(import.meta.env.VITE_DEMO_MODE ?? '').toLowerCase() === 'true';
 
-function useDemoFallback<T>(mockValue: T, reason: string): T {
+function demoFallback<T>(mockValue: T, reason: string): T {
   console.warn(`[Weaver demo fallback] ${reason}`);
   return mockValue;
 }
@@ -78,27 +78,20 @@ function dbInferenceToResult(row: Tables<'inference_runs'>): InferenceResult {
     confidenceBand: (row.confidence_band || 'low') as InferenceResult['confidenceBand'],
     severity: (row.severity || 'medium') as InferenceResult['severity'],
     explanation: row.explanation || '',
-
     candidateDecisions: candidates as InferenceResult['candidateDecisions'],
     confidenceBreakdown: normalizeConfidenceBreakdown(row.confidence_breakdown),
     firedRules: firedRules as InferenceResult['firedRules'],
-
     recommendations: [],
-
     missingFacts: asArray<string>(row.missing_facts),
     contradictions: asArray<string>(row.contradictions),
     evidenceRefs: asArray<string>(row.evidence_refs),
-
     mode: (row.mode || 'instant') as InferenceResult['mode'],
-
     deterministicDecisionPreserved:
       trace?.deterministicDecisionPreserved ??
       (row as any).deterministic_decision_preserved ??
       undefined,
-
     aiAssessment: (row as any).ai_assessment ?? undefined,
     aiSuggestedDecision: (row as any).ai_suggested_decision ?? undefined,
-
     decisionTrace: trace,
   };
 }
@@ -108,6 +101,7 @@ function dbCaseToCase(
   inferenceRun?: Tables<'inference_runs'> | null,
 ): Case {
   const ir = inferenceRun ? dbInferenceToResult(inferenceRun) : undefined;
+  const orgId = (row as any).organization_id ?? null;
 
   return {
     id: row.id,
@@ -115,26 +109,22 @@ function dbCaseToCase(
     category: row.category,
     source: row.source,
     status: row.status as Case['status'],
-
     decision: ir?.decision,
     confidence: ir?.confidence,
     confidenceBand: ir?.confidenceBand,
-
     severity: row.severity as Case['severity'],
     owner: row.owner || 'Unassigned',
     reviewState: row.review_state as Case['reviewState'],
-
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-
     amount: row.amount ?? undefined,
     description: row.description || '',
-
     facts: [],
     inferenceResult: ir,
-
     tags: row.tags || [],
-  };
+    organizationId: orgId,
+    organization_id: orgId,
+  } as Case & { organizationId?: string | null; organization_id?: string | null };
 }
 
 function dbRuleToRule(row: Tables<'rules'>): Rule {
@@ -187,12 +177,12 @@ export function useCases() {
         .order('created_at', { ascending: false });
 
       if (error) {
-        if (DEMO_MODE) return useDemoFallback(MOCK_CASES, `cases query failed: ${error.message}`);
+        if (DEMO_MODE) return demoFallback(MOCK_CASES, `cases query failed: ${error.message}`);
         throw new Error(`Failed to load cases: ${error.message}`);
       }
 
       if (!cases || cases.length === 0) {
-        return DEMO_MODE ? useDemoFallback(MOCK_CASES, 'cases table empty') : [];
+        return DEMO_MODE ? demoFallback(MOCK_CASES, 'cases table empty') : [];
       }
 
       const caseIds = cases.map((c) => c.id);
@@ -211,12 +201,12 @@ export function useCases() {
         ]);
 
       if (runsError) {
-        if (DEMO_MODE) return useDemoFallback(MOCK_CASES, `inference_runs query failed: ${runsError.message}`);
+        if (DEMO_MODE) return demoFallback(MOCK_CASES, `inference_runs query failed: ${runsError.message}`);
         throw new Error(`Failed to load inference runs: ${runsError.message}`);
       }
 
       if (factsError) {
-        if (DEMO_MODE) return useDemoFallback(MOCK_CASES, `case_facts query failed: ${factsError.message}`);
+        if (DEMO_MODE) return demoFallback(MOCK_CASES, `case_facts query failed: ${factsError.message}`);
         throw new Error(`Failed to load case facts: ${factsError.message}`);
       }
 
@@ -260,7 +250,7 @@ export function useCaseDetail(id: string | undefined) {
 
       if (error) {
         if (DEMO_MODE) {
-          return useDemoFallback(
+          return demoFallback(
             MOCK_CASES.find((c) => c.id === id) || null,
             `case detail query failed: ${error.message}`,
           );
@@ -271,7 +261,7 @@ export function useCaseDetail(id: string | undefined) {
 
       if (!caseRow) {
         return DEMO_MODE
-          ? useDemoFallback(MOCK_CASES.find((c) => c.id === id) || null, `case ${id} not found`)
+          ? demoFallback(MOCK_CASES.find((c) => c.id === id) || null, `case ${id} not found`)
           : null;
       }
 
@@ -315,7 +305,6 @@ export function useCaseDetail(id: string | undefined) {
       }
 
       const result = dbCaseToCase(caseRow, run);
-
       result.facts = (facts || []).map(dbFactToFact);
 
       if (result.inferenceResult && recs.length > 0) {
@@ -345,12 +334,12 @@ export function useRules() {
         .order('priority', { ascending: true });
 
       if (error) {
-        if (DEMO_MODE) return useDemoFallback(MOCK_RULES, `rules query failed: ${error.message}`);
+        if (DEMO_MODE) return demoFallback(MOCK_RULES, `rules query failed: ${error.message}`);
         throw new Error(`Failed to load rules: ${error.message}`);
       }
 
       if (!data || data.length === 0) {
-        return DEMO_MODE ? useDemoFallback(MOCK_RULES, 'rules table empty') : [];
+        return DEMO_MODE ? demoFallback(MOCK_RULES, 'rules table empty') : [];
       }
 
       return data.map(dbRuleToRule);
@@ -369,12 +358,12 @@ export function useMetrics() {
         .order('date', { ascending: true });
 
       if (error) {
-        if (DEMO_MODE) return useDemoFallback(MOCK_METRICS, `metrics query failed: ${error.message}`);
+        if (DEMO_MODE) return demoFallback(MOCK_METRICS, `metrics query failed: ${error.message}`);
         throw new Error(`Failed to load metrics: ${error.message}`);
       }
 
       if (!data || data.length === 0) {
-        return DEMO_MODE ? useDemoFallback(MOCK_METRICS, 'daily_metrics table empty') : [];
+        return DEMO_MODE ? demoFallback(MOCK_METRICS, 'daily_metrics table empty') : [];
       }
 
       return data.map(dbMetricToMetric);
