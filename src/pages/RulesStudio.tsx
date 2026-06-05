@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { useRules } from '@/hooks/use-data';
+import { useRules, useCases } from '@/hooks/use-data';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { useAuthGate } from '@/hooks/use-auth-gate';
@@ -9,6 +9,15 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { RuleListPanel } from '@/components/rules/RuleListPanel';
 import { RuleDetailPanel } from '@/components/rules/RuleDetailPanel';
 import { RuleFormDialog, emptyForm, type RuleForm } from '@/components/rules/RuleFormDialog';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import {
+  Activity,
+  AlertTriangle,
+  BarChart3,
+  CheckCircle2,
+  ShieldCheck,
+} from 'lucide-react';
 import type { Rule } from '@/lib/types';
 
 const VALID_OPERATORS = new Set([
@@ -45,6 +54,15 @@ type ConditionNode = {
   any?: ConditionNode[];
 };
 
+type RuleHealth = {
+  ruleId: string;
+  firedCount: number;
+  enabled: boolean;
+  priority: number;
+  readiness: 'strong' | 'watch' | 'inactive';
+  notes: string[];
+};
+
 function normalizeJson(value: unknown, fallback: any) {
   if (typeof value !== 'string') return value ?? fallback;
 
@@ -64,6 +82,7 @@ function validateConditionTree(node: ConditionNode, path = 'conditions') {
     if (!Array.isArray(node.all) || node.all.length === 0) {
       throw new Error(`${path}.all must contain at least one condition.`);
     }
+
     node.all.forEach((child, index) => validateConditionTree(child, `${path}.all[${index}]`));
     return;
   }
@@ -72,6 +91,7 @@ function validateConditionTree(node: ConditionNode, path = 'conditions') {
     if (!Array.isArray(node.any) || node.any.length === 0) {
       throw new Error(`${path}.any must contain at least one condition.`);
     }
+
     node.any.forEach((child, index) => validateConditionTree(child, `${path}.any[${index}]`));
     return;
   }
@@ -81,6 +101,7 @@ function validateConditionTree(node: ConditionNode, path = 'conditions') {
   }
 
   const operator = node.operator || 'equals';
+
   if (!VALID_OPERATORS.has(operator)) {
     throw new Error(`Unsupported operator "${operator}" in ${path}.`);
   }
@@ -146,6 +167,153 @@ function validateRuleForm(form: RuleForm) {
   validateOutput(output);
 
   return { conditions, output };
+}
+
+function readinessBadge(readiness: RuleHealth['readiness']) {
+  if (readiness === 'strong') return <Badge variant="success">Strong</Badge>;
+  if (readiness === 'watch') return <Badge variant="warning">Watch</Badge>;
+  return <Badge variant="outline">Inactive</Badge>;
+}
+
+function AccuracyReadinessPanel({
+  rules,
+  selectedRule,
+}: {
+  rules: Rule[];
+  selectedRule: Rule | null;
+}) {
+  const { data: cases = [] } = useCases();
+
+  const health = useMemo(() => {
+    const map = new Map<string, RuleHealth>();
+
+    for (const rule of rules) {
+      const notes: string[] = [];
+
+      if (!rule.enabled) notes.push('Rule is disabled.');
+      if (rule.hitCount === 0) notes.push('No recorded hits yet.');
+      if (rule.priority >= 8) notes.push('High priority rule.');
+      if (!rule.explanationTemplate?.trim()) notes.push('Missing explanation template.');
+
+      const readiness: RuleHealth['readiness'] = !rule.enabled
+        ? 'inactive'
+        : rule.hitCount > 0 && rule.explanationTemplate?.trim()
+          ? 'strong'
+          : 'watch';
+
+      map.set(rule.id, {
+        ruleId: rule.id,
+        firedCount: rule.hitCount,
+        enabled: rule.enabled,
+        priority: rule.priority,
+        readiness,
+        notes,
+      });
+    }
+
+    return map;
+  }, [rules]);
+
+  const selectedHealth = selectedRule ? health.get(selectedRule.id) : null;
+
+  const totals = useMemo(() => {
+    const enabled = rules.filter((r) => r.enabled).length;
+    const withHits = rules.filter((r) => r.hitCount > 0).length;
+    const totalHits = rules.reduce((sum, rule) => sum + Number(rule.hitCount || 0), 0);
+    const casesWithDecisions = cases.filter((c) => c.inferenceResult).length;
+
+    return {
+      enabled,
+      withHits,
+      totalHits,
+      casesWithDecisions,
+      totalRules: rules.length,
+    };
+  }, [rules, cases]);
+
+  return (
+    <div className="border-b border-border bg-surface-1 p-4 space-y-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-primary" />
+            <h3 className="text-body-md font-semibold text-foreground">Rule Readiness</h3>
+          </div>
+          <p className="text-body-sm text-muted-foreground mt-1">
+            Lightweight readiness based on current rule state and observed inference activity.
+          </p>
+        </div>
+
+        <Badge variant={totals.casesWithDecisions > 0 ? 'confidence' : 'secondary'}>
+          {totals.casesWithDecisions > 0 ? 'Inference history found' : 'No inference history'}
+        </Badge>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-4">
+        <div className="rounded-lg border border-border bg-surface-2 p-3">
+          <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
+            <Activity className="w-3.5 h-3.5" />
+            Enabled Rules
+          </div>
+          <p className="mt-1 text-xl font-semibold text-foreground">
+            {totals.enabled}/{totals.totalRules}
+          </p>
+        </div>
+
+        <div className="rounded-lg border border-border bg-surface-2 p-3">
+          <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
+            <BarChart3 className="w-3.5 h-3.5" />
+            Rules With Hits
+          </div>
+          <p className="mt-1 text-xl font-semibold text-foreground">{totals.withHits}</p>
+        </div>
+
+        <div className="rounded-lg border border-border bg-surface-2 p-3">
+          <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            Total Hits
+          </div>
+          <p className="mt-1 text-xl font-semibold text-foreground">{totals.totalHits}</p>
+        </div>
+
+        <div className="rounded-lg border border-border bg-surface-2 p-3">
+          <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
+            <AlertTriangle className="w-3.5 h-3.5" />
+            Decisions
+          </div>
+          <p className="mt-1 text-xl font-semibold text-foreground">{totals.casesWithDecisions}</p>
+        </div>
+      </div>
+
+      {selectedRule && selectedHealth && (
+        <div className="rounded-lg border border-border bg-surface-2 p-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-body-sm font-semibold text-foreground">{selectedRule.name}</p>
+              <p className="text-caption text-muted-foreground">
+                Version {selectedRule.version} · {selectedRule.hitCount} recorded hit
+                {selectedRule.hitCount !== 1 ? 's' : ''}
+              </p>
+            </div>
+
+            {readinessBadge(selectedHealth.readiness)}
+          </div>
+
+          {selectedHealth.notes.length > 0 ? (
+            <ul className="mt-3 space-y-1 text-body-sm text-muted-foreground">
+              {selectedHealth.notes.map((note) => (
+                <li key={note}>• {note}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-3 text-body-sm text-muted-foreground">
+              No readiness warnings detected for this rule.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function RulesStudio() {
@@ -342,12 +510,16 @@ export default function RulesStudio() {
           onToggleRule={handleToggle}
         />
 
-        <RuleDetailPanel
-          rule={selected}
-          onEdit={handleEdit}
-          onDuplicate={handleDuplicate}
-          onDelete={handleDelete}
-        />
+        <div className="flex flex-col flex-1 min-w-0">
+          <AccuracyReadinessPanel rules={rules} selectedRule={selected} />
+
+          <RuleDetailPanel
+            rule={selected}
+            onEdit={handleEdit}
+            onDuplicate={handleDuplicate}
+            onDelete={handleDelete}
+          />
+        </div>
       </div>
 
       <RuleFormDialog
