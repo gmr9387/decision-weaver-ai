@@ -1,5 +1,7 @@
+import { useQuery } from '@tanstack/react-query';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { supabase } from '@/integrations/supabase/client';
 import {
   Copy,
   Pencil,
@@ -8,6 +10,9 @@ import {
   TrendingUp,
   Clock,
   Activity,
+  History,
+  Loader2,
+  AlertTriangle,
 } from 'lucide-react';
 import type { Rule } from '@/lib/types';
 import { typeColors } from './RuleListPanel';
@@ -18,6 +23,136 @@ interface RuleDetailPanelProps {
   onEdit: (rule: Rule) => void;
   onDuplicate: (rule: Rule) => void;
   onDelete: (id: string) => void;
+}
+
+type RuleVersionRow = {
+  id: string;
+  rule_id: string;
+  version: number;
+  name: string;
+  description: string | null;
+  category: string;
+  rule_type: string;
+  priority: number;
+  enabled: boolean;
+  conditions: unknown;
+  output: unknown;
+  confidence_impact: number | null;
+  explanation_template: string | null;
+  created_by: string | null;
+  created_at: string;
+};
+
+function RuleVersionHistory({ ruleId }: { ruleId: string }) {
+  const {
+    data: versions = [],
+    isLoading,
+    isError,
+    error,
+  } = useQuery({
+    queryKey: ['rule-versions', ruleId],
+    queryFn: async (): Promise<RuleVersionRow[]> => {
+      const { data, error: queryError } = await supabase
+        .from('rule_versions' as any)
+        .select(
+          'id, rule_id, version, name, description, category, rule_type, priority, enabled, conditions, output, confidence_impact, explanation_template, created_by, created_at',
+        )
+        .eq('rule_id', ruleId)
+        .order('version', { ascending: false });
+
+      if (queryError) {
+        throw new Error(queryError.message);
+      }
+
+      return (data || []) as RuleVersionRow[];
+    },
+    enabled: !!ruleId,
+    staleTime: 30000,
+  });
+
+  return (
+    <div className="rounded-xl border border-border bg-gradient-card p-6">
+      <div className="flex items-center gap-2 mb-4">
+        <History className="w-4 h-4 text-primary" />
+        <h3 className="text-body-md font-semibold text-foreground">
+          Version History
+        </h3>
+      </div>
+
+      {isLoading && (
+        <div className="flex items-center gap-2 text-body-sm text-muted-foreground">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          Loading version history...
+        </div>
+      )}
+
+      {isError && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-body-sm text-destructive">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4" />
+            {(error as Error)?.message || 'Could not load version history.'}
+          </div>
+        </div>
+      )}
+
+      {!isLoading && !isError && versions.length === 0 && (
+        <p className="text-body-sm text-muted-foreground">
+          No version snapshots found yet. Apply the rule versioning migration to populate this history.
+        </p>
+      )}
+
+      {!isLoading && !isError && versions.length > 0 && (
+        <div className="space-y-3">
+          {versions.map((version) => (
+            <div
+              key={version.id}
+              className="rounded-lg border border-border bg-surface-2 p-4"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary">v{version.version}</Badge>
+                    <span className="text-body-sm font-medium text-foreground">
+                      {version.name}
+                    </span>
+                    {!version.enabled && (
+                      <Badge variant="outline">Disabled</Badge>
+                    )}
+                  </div>
+
+                  <p className="mt-1 text-caption text-muted-foreground">
+                    {new Date(version.created_at).toLocaleString()}
+                  </p>
+                </div>
+
+                <div className="text-right text-caption text-muted-foreground">
+                  <div>{version.category}</div>
+                  <div>Priority {version.priority}</div>
+                </div>
+              </div>
+
+              <div className="mt-3 grid gap-2 md:grid-cols-2 text-caption">
+                <div className="rounded-md bg-background/50 p-2">
+                  <span className="text-muted-foreground">Created by</span>
+                  <div className="font-mono text-foreground truncate">
+                    {version.created_by || 'System'}
+                  </div>
+                </div>
+
+                <div className="rounded-md bg-background/50 p-2">
+                  <span className="text-muted-foreground">Confidence Impact</span>
+                  <div className="font-mono text-foreground">
+                    {Number(version.confidence_impact || 0) >= 0 ? '+' : ''}
+                    {Number(version.confidence_impact || 0)}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function RuleDetailPanel({
@@ -45,9 +180,6 @@ export function RuleDetailPanel({
   return (
     <div className="flex-1 overflow-auto">
       <div className="p-6 lg:p-8 space-y-6">
-
-        {/* Header */}
-
         <div className="flex items-start justify-between">
           <div>
             <div className="flex items-center gap-2 mb-2">
@@ -107,10 +239,7 @@ export function RuleDetailPanel({
           </div>
         </div>
 
-        {/* Metrics */}
-
         <div className="grid md:grid-cols-4 gap-4">
-
           <div className="rounded-xl border border-border bg-gradient-card p-4">
             <div className="flex items-center gap-2 mb-2">
               <TrendingUp className="w-4 h-4 text-primary" />
@@ -159,17 +288,10 @@ export function RuleDetailPanel({
               v{rule.version}
             </div>
           </div>
-
         </div>
 
-        {/* Main */}
-
         <div className="grid lg:grid-cols-2 gap-6">
-
-          {/* Left */}
-
           <div className="space-y-4">
-
             <div className="rounded-xl border border-border bg-gradient-card p-6">
               <h3 className="text-body-md font-semibold text-foreground mb-4">
                 Rule Metadata
@@ -209,12 +331,10 @@ export function RuleDetailPanel({
               </pre>
             </div>
 
+            <RuleVersionHistory ruleId={rule.id} />
           </div>
 
-          {/* Right */}
-
           <div className="space-y-4">
-
             <div className="rounded-xl border border-border bg-gradient-card p-6">
               <h3 className="text-body-md font-semibold text-foreground mb-4">
                 Conditions
@@ -234,9 +354,7 @@ export function RuleDetailPanel({
                 {rule.explanationTemplate || 'No explanation template'}
               </div>
             </div>
-
           </div>
-
         </div>
       </div>
     </div>
