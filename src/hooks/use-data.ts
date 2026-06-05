@@ -12,11 +12,19 @@ import type {
 } from '@/lib/types';
 import type { Tables } from '@/integrations/supabase/types';
 
-function asArray<T = any>(value: unknown): T[] {
+const DEMO_MODE =
+  String(import.meta.env.VITE_DEMO_MODE ?? '').toLowerCase() === 'true';
+
+function useDemoFallback<T>(mockValue: T, reason: string): T {
+  console.warn(`[Weaver demo fallback] ${reason}`);
+  return mockValue;
+}
+
+function asArray<T = unknown>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
 }
 
-function asObject<T extends Record<string, any>>(value: unknown, fallback: T): T {
+function asObject<T extends Record<string, unknown>>(value: unknown, fallback: T): T {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as T)
     : fallback;
@@ -55,7 +63,7 @@ function normalizeConfidenceBreakdown(raw: unknown): ConfidenceBreakdown {
 }
 
 function normalizeDecisionTrace(raw: unknown): DecisionTrace | undefined {
-  if (!raw || typeof raw !== 'object') return undefined;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
   return raw as DecisionTrace;
 }
 
@@ -178,23 +186,39 @@ export function useCases() {
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (error || !cases || cases.length === 0) {
-        return MOCK_CASES;
+      if (error) {
+        if (DEMO_MODE) return useDemoFallback(MOCK_CASES, `cases query failed: ${error.message}`);
+        throw new Error(`Failed to load cases: ${error.message}`);
+      }
+
+      if (!cases || cases.length === 0) {
+        return DEMO_MODE ? useDemoFallback(MOCK_CASES, 'cases table empty') : [];
       }
 
       const caseIds = cases.map((c) => c.id);
 
-      const [{ data: runs }, { data: facts }] = await Promise.all([
-        supabase
-          .from('inference_runs')
-          .select('*')
-          .in('case_id', caseIds)
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('case_facts')
-          .select('*')
-          .in('case_id', caseIds),
-      ]);
+      const [{ data: runs, error: runsError }, { data: facts, error: factsError }] =
+        await Promise.all([
+          supabase
+            .from('inference_runs')
+            .select('*')
+            .in('case_id', caseIds)
+            .order('created_at', { ascending: false }),
+          supabase
+            .from('case_facts')
+            .select('*')
+            .in('case_id', caseIds),
+        ]);
+
+      if (runsError) {
+        if (DEMO_MODE) return useDemoFallback(MOCK_CASES, `inference_runs query failed: ${runsError.message}`);
+        throw new Error(`Failed to load inference runs: ${runsError.message}`);
+      }
+
+      if (factsError) {
+        if (DEMO_MODE) return useDemoFallback(MOCK_CASES, `case_facts query failed: ${factsError.message}`);
+        throw new Error(`Failed to load case facts: ${factsError.message}`);
+      }
 
       const latestRunMap = new Map<string, Tables<'inference_runs'>>();
 
@@ -234,32 +258,58 @@ export function useCaseDetail(id: string | undefined) {
         .eq('id', id)
         .maybeSingle();
 
-      if (error || !caseRow) {
-        return MOCK_CASES.find((c) => c.id === id) || null;
+      if (error) {
+        if (DEMO_MODE) {
+          return useDemoFallback(
+            MOCK_CASES.find((c) => c.id === id) || null,
+            `case detail query failed: ${error.message}`,
+          );
+        }
+
+        throw new Error(`Failed to load case ${id}: ${error.message}`);
       }
 
-      const [{ data: runs }, { data: facts }] = await Promise.all([
-        supabase
-          .from('inference_runs')
-          .select('*')
-          .eq('case_id', id)
-          .order('created_at', { ascending: false })
-          .limit(1),
-        supabase
-          .from('case_facts')
-          .select('*')
-          .eq('case_id', id),
-      ]);
+      if (!caseRow) {
+        return DEMO_MODE
+          ? useDemoFallback(MOCK_CASES.find((c) => c.id === id) || null, `case ${id} not found`)
+          : null;
+      }
+
+      const [{ data: runs, error: runsError }, { data: facts, error: factsError }] =
+        await Promise.all([
+          supabase
+            .from('inference_runs')
+            .select('*')
+            .eq('case_id', id)
+            .order('created_at', { ascending: false })
+            .limit(1),
+          supabase
+            .from('case_facts')
+            .select('*')
+            .eq('case_id', id),
+        ]);
+
+      if (runsError) {
+        throw new Error(`Failed to load inference history for case ${id}: ${runsError.message}`);
+      }
+
+      if (factsError) {
+        throw new Error(`Failed to load facts for case ${id}: ${factsError.message}`);
+      }
 
       const run = runs?.[0] || null;
 
       let recs: Tables<'recommendations'>[] = [];
 
       if (run) {
-        const { data } = await supabase
+        const { data, error: recsError } = await supabase
           .from('recommendations')
           .select('*')
           .eq('inference_run_id', run.id);
+
+        if (recsError) {
+          throw new Error(`Failed to load recommendations for case ${id}: ${recsError.message}`);
+        }
 
         recs = data || [];
       }
@@ -294,8 +344,13 @@ export function useRules() {
         .select('*')
         .order('priority', { ascending: true });
 
-      if (error || !data || data.length === 0) {
-        return MOCK_RULES;
+      if (error) {
+        if (DEMO_MODE) return useDemoFallback(MOCK_RULES, `rules query failed: ${error.message}`);
+        throw new Error(`Failed to load rules: ${error.message}`);
+      }
+
+      if (!data || data.length === 0) {
+        return DEMO_MODE ? useDemoFallback(MOCK_RULES, 'rules table empty') : [];
       }
 
       return data.map(dbRuleToRule);
@@ -313,8 +368,13 @@ export function useMetrics() {
         .select('*')
         .order('date', { ascending: true });
 
-      if (error || !data || data.length === 0) {
-        return MOCK_METRICS;
+      if (error) {
+        if (DEMO_MODE) return useDemoFallback(MOCK_METRICS, `metrics query failed: ${error.message}`);
+        throw new Error(`Failed to load metrics: ${error.message}`);
+      }
+
+      if (!data || data.length === 0) {
+        return DEMO_MODE ? useDemoFallback(MOCK_METRICS, 'daily_metrics table empty') : [];
       }
 
       return data.map(dbMetricToMetric);
@@ -335,7 +395,11 @@ export function useInferenceHistory(caseId: string | undefined) {
         .eq('case_id', caseId)
         .order('created_at', { ascending: false });
 
-      if (error || !data) return [];
+      if (error) {
+        throw new Error(`Failed to load inference history for case ${caseId}: ${error.message}`);
+      }
+
+      if (!data || data.length === 0) return [];
 
       return data.map((row) => {
         const result = dbInferenceToResult(row);
