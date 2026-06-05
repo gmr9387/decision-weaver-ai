@@ -7,6 +7,8 @@ import {
   ShieldCheck,
   XCircle,
   Zap,
+  History,
+  Fingerprint,
 } from 'lucide-react';
 import type { InferenceResult } from '@/lib/types';
 
@@ -26,6 +28,22 @@ function getRules(ir: any) {
   return arr(ir?.firedRules ?? ir?.fired_rules);
 }
 
+function getRuleId(rule: any) {
+  return rule?.ruleId ?? rule?.rule_id ?? null;
+}
+
+function getRuleName(rule: any) {
+  return rule?.ruleName ?? rule?.rule_name ?? rule?.name ?? 'Unnamed rule';
+}
+
+function getRuleVersion(rule: any) {
+  return rule?.ruleVersion ?? rule?.rule_version ?? null;
+}
+
+function getRuleSnapshotId(rule: any) {
+  return rule?.ruleSnapshotId ?? rule?.rule_snapshot_id ?? null;
+}
+
 function formatOutput(output: unknown) {
   if (!output) return 'No output';
   if (typeof output === 'string') return output;
@@ -41,9 +59,14 @@ export function RulesTraceTab({ ir }: RulesTraceTabProps) {
   const rules = getRules(ir);
   const firedRules = rules.filter((rule) => rule.fired);
   const blockedRules = rules.filter((rule) => !rule.fired);
+
+  const versionedRules = rules.filter((rule) => Boolean(getRuleVersion(rule)));
+  const snapshotRules = rules.filter((rule) => Boolean(getRuleSnapshotId(rule)));
+
   const positiveImpact = firedRules
     .filter((rule) => Number(rule.confidenceImpact ?? 0) > 0)
     .reduce((sum, rule) => sum + Number(rule.confidenceImpact ?? 0), 0);
+
   const negativeImpact = firedRules
     .filter((rule) => Number(rule.confidenceImpact ?? 0) < 0)
     .reduce((sum, rule) => sum + Number(rule.confidenceImpact ?? 0), 0);
@@ -62,13 +85,14 @@ export function RulesTraceTab({ ir }: RulesTraceTabProps) {
                   <h3 className="text-body-md font-semibold text-foreground">Decision Replay</h3>
                 </div>
                 <p className="text-body-sm text-muted-foreground">
-                  Replay how Weaver evaluated rules, detected gaps, and arrived at the final decision.
+                  Replay how Weaver evaluated rules, detected gaps, recorded rule versions, and arrived at the final decision.
                 </p>
               </div>
 
               <div className="flex flex-wrap gap-2">
                 <Badge variant="default">{firedRules.length} fired</Badge>
                 <Badge variant="secondary">{blockedRules.length} blocked</Badge>
+                <Badge variant="confidence">{versionedRules.length} versioned</Badge>
                 <Badge variant="outline" className="font-mono">
                   Trace: {trace?.traceId ? String(trace.traceId).slice(0, 8) : 'session'}
                 </Badge>
@@ -86,6 +110,24 @@ export function RulesTraceTab({ ir }: RulesTraceTabProps) {
                 <p className="mt-1 text-2xl font-semibold text-foreground">{firedRules.length}</p>
               </div>
 
+              <div className="rounded-lg border border-border bg-surface-2 p-4">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Version Coverage</p>
+                <p className="mt-1 text-2xl font-semibold text-foreground">
+                  {versionedRules.length}
+                  <span className="text-sm text-muted-foreground"> / {rules.length}</span>
+                </p>
+              </div>
+
+              <div className="rounded-lg border border-border bg-surface-2 p-4">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Snapshots</p>
+                <p className="mt-1 text-2xl font-semibold text-foreground">
+                  {snapshotRules.length}
+                  <span className="text-sm text-muted-foreground"> linked</span>
+                </p>
+              </div>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2 mt-3">
               <div className="rounded-lg border border-border bg-surface-2 p-4">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Positive Impact</p>
                 <p className="mt-1 text-2xl font-semibold text-success">+{positiveImpact}</p>
@@ -109,10 +151,14 @@ export function RulesTraceTab({ ir }: RulesTraceTabProps) {
                 const impact = Number(rule.confidenceImpact ?? 0);
                 const conditionsMet = arr(rule.conditionsMet);
                 const conditionsUnmet = arr(rule.conditionsUnmet);
+                const ruleId = getRuleId(rule);
+                const ruleName = getRuleName(rule);
+                const ruleVersion = getRuleVersion(rule);
+                const ruleSnapshotId = getRuleSnapshotId(rule);
 
                 return (
                   <div
-                    key={rule.ruleId || idx}
+                    key={ruleId || `${ruleName}-${idx}`}
                     className={`relative rounded-xl border p-4 ${
                       rule.fired ? 'border-primary/30 bg-primary/5' : 'border-border bg-surface-2'
                     }`}
@@ -134,9 +180,45 @@ export function RulesTraceTab({ ir }: RulesTraceTabProps) {
                             <Badge variant={rule.fired ? 'default' : 'secondary'}>
                               {rule.fired ? 'Fired' : 'Not Fired'}
                             </Badge>
-                            <Badge variant="outline" className="text-caption capitalize">{rule.type}</Badge>
-                            <Badge variant="secondary" className="text-caption">P{rule.priority}</Badge>
-                            <span className="text-body-sm font-semibold text-foreground">{rule.name}</span>
+                            <Badge variant="outline" className="text-caption capitalize">
+                              {rule.type ?? 'rule'}
+                            </Badge>
+                            <Badge variant="secondary" className="text-caption">
+                              P{rule.priority}
+                            </Badge>
+                            {ruleVersion ? (
+                              <Badge variant="confidence" className="text-caption gap-1">
+                                <History className="h-3 w-3" />
+                                v{ruleVersion}
+                              </Badge>
+                            ) : (
+                              <Badge variant="warning" className="text-caption">
+                                Unversioned
+                              </Badge>
+                            )}
+                            <span className="text-body-sm font-semibold text-foreground">
+                              {ruleName}
+                            </span>
+                          </div>
+
+                          <div className="mb-2 flex flex-wrap items-center gap-2 text-caption text-muted-foreground">
+                            {ruleId && (
+                              <span className="font-mono">
+                                rule:{String(ruleId).slice(0, 8)}
+                              </span>
+                            )}
+
+                            {ruleSnapshotId ? (
+                              <span className="inline-flex items-center gap-1 font-mono">
+                                <Fingerprint className="h-3 w-3" />
+                                snapshot:{String(ruleSnapshotId).slice(0, 8)}
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1">
+                                <AlertTriangle className="h-3 w-3 text-warning" />
+                                no snapshot linked
+                              </span>
+                            )}
                           </div>
 
                           {rule.explanation ? (
