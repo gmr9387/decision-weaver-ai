@@ -1,12 +1,17 @@
 import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useCaseDetail, useInferenceHistory } from '@/hooks/use-data';
 import { useRunInference } from '@/hooks/use-actions';
 import { useAuthGate } from '@/hooks/use-auth-gate';
+import { useAuth } from '@/hooks/use-auth';
+import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
@@ -22,6 +27,8 @@ import {
   Brain,
   CheckCircle2,
   XCircle,
+  Target,
+  Save,
 } from 'lucide-react';
 import type { InferenceMode } from '@/lib/types';
 import { decisionColors, severityColors } from '@/components/cases/constants';
@@ -46,7 +53,14 @@ type DecisionTrace = {
   candidateDecisions?: { decision: string; score: number }[];
   confidenceInputs?: Record<string, number>;
   ruleTrace?: {
-    ruleId: string;
+    ruleId?: string;
+    rule_id?: string;
+    ruleName?: string;
+    rule_name?: string;
+    ruleVersion?: number;
+    rule_version?: number;
+    ruleSnapshotId?: string | null;
+    rule_snapshot_id?: string | null;
     name: string;
     priority: number;
     fired: boolean;
@@ -55,6 +69,27 @@ type DecisionTrace = {
     confidenceImpact: number;
     explanation?: string;
   }[];
+};
+
+type CaseOutcome = {
+  id: string;
+  case_id: string;
+  organization_id: string;
+  expected_decision: string | null;
+  actual_outcome: string;
+  confidence_at_label: number | null;
+  notes: string | null;
+  labeled_by: string | null;
+  labeled_at: string;
+  updated_at: string;
+};
+
+const OUTCOME_LABELS: Record<string, string> = {
+  confirmed_correct: 'Confirmed Correct',
+  incorrect: 'Incorrect',
+  partially_correct: 'Partially Correct',
+  needs_more_info: 'Needs More Info',
+  overturned: 'Overturned',
 };
 
 function getTrace(ir: any): DecisionTrace | null {
@@ -68,6 +103,191 @@ function formatDate(value?: string) {
   } catch {
     return value;
   }
+}
+
+function OutcomeLoopPanel({
+  caseId,
+  organizationId,
+  ir,
+}: {
+  caseId: string;
+  organizationId?: string | null;
+  ir: any;
+}) {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const [actualOutcome, setActualOutcome] = useState('confirmed_correct');
+  const [notes, setNotes] = useState('');
+
+  const {
+    data: outcome,
+    isLoading,
+    isError,
+    error,
+  } = useQuery({
+    queryKey: ['case-outcome', caseId],
+    queryFn: async (): Promise<CaseOutcome | null> => {
+      const { data, error: queryError } = await supabase
+        .from('case_outcomes' as any)
+        .select('*')
+        .eq('case_id', caseId)
+        .maybeSingle();
+
+      if (queryError) throw new Error(queryError.message);
+
+      if (data) {
+        setActualOutcome((data as CaseOutcome).actual_outcome);
+        setNotes((data as CaseOutcome).notes || '');
+      }
+
+      return (data as CaseOutcome | null) ?? null;
+    },
+    enabled: !!caseId,
+    staleTime: 30000,
+  });
+
+  const saveOutcome = useMutation({
+    mutationFn: async () => {
+      if (!organizationId) throw new Error('No organization found for this case.');
+      if (!user?.id) throw new Error('You must be signed in.');
+
+      const payload = {
+        organization_id: organizationId,
+        case_id: caseId,
+        expected_decision: ir?.decision ?? null,
+        actual_outcome: actualOutcome,
+        confidence_at_label: ir?.confidence ?? null,
+        notes: notes.trim() || null,
+        labeled_by: user.id,
+        labeled_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error: upsertError } = await supabase
+        .from('case_outcomes' as any)
+        .upsert(payload, { onConflict: 'case_id' });
+
+      if (upsertError) throw new Error(upsertError.message);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['case-outcome', caseId] });
+      toast({
+        title: 'Outcome labeled',
+        description: 'This decision now has a ground-truth outcome attached.',
+      });
+    },
+    onError: (err: any) => {
+      toast({
+        title: 'Could not save outcome',
+        description: err?.message || 'Outcome labeling failed.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  return (
+    <div className="rounded-2xl border border-border bg-surface-1 p-5 space-y-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <Target className="h-5 w-5 text-primary" />
+            <h2 className="text-lg font-semibold text-foreground">Outcome Loop</h2>
+          </div>
+          <p className="text-sm text-muted-foreground max-w-3xl">
+            Label whether Weaver's decision was actually correct. This creates the foundation for future
+            accuracy, calibration, and rule-effectiveness metrics.
+          </p>
+        </div>
+
+        {outcome ? (
+          <Badge variant="success">Outcome Labeled</Badge>
+        ) : (
+          <Badge variant="warning">Unlabeled</Badge>
+        )}
+      </div>
+
+      {isLoading && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading outcome state...
+        </div>
+      )}
+
+      {isError && (
+        <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+          {(error as Error)?.message || 'Could not load outcome.'}
+        </div>
+      )}
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="rounded-xl border border-border bg-surface-2 p-4">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Expected Decision</p>
+          <p className="mt-1 text-lg font-semibold text-foreground capitalize">
+            {String(ir?.decision ?? 'none').replace('_', ' ')}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Confidence: {ir?.confidence !== undefined ? `${Number(ir.confidence).toFixed(1)}%` : 'Not available'}
+          </p>
+        </div>
+
+        <div className="lg:col-span-2 rounded-xl border border-border bg-surface-2 p-4 space-y-3">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground mb-2">Actual Outcome</p>
+            <Select value={actualOutcome} onValueChange={setActualOutcome}>
+              <SelectTrigger className="bg-background border-border">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(OUTCOME_LABELS).map(([value, label]) => (
+                  <SelectItem key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground mb-2">Reviewer Notes</p>
+            <Textarea
+              value={notes}
+              onChange={(event) => setNotes(event.target.value)}
+              placeholder="Explain why this decision was correct, incorrect, overturned, or needs more information..."
+              className="bg-background border-border min-h-[90px]"
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs text-muted-foreground">
+              Last labeled: {outcome ? formatDate(outcome.labeled_at) : 'Never'}
+            </p>
+
+            <Button
+              variant="hero"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => saveOutcome.mutate()}
+              disabled={saveOutcome.isPending || !ir}
+            >
+              {saveOutcome.isPending ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save className="h-3.5 w-3.5" />
+                  Save Outcome
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function DecisionTrustPanel({ ir }: { ir: any }) {
@@ -410,6 +630,12 @@ export default function CaseDetail() {
         </div>
 
         <DecisionTrustPanel ir={ir} />
+
+        <OutcomeLoopPanel
+          caseId={caseData.id}
+          organizationId={(caseData as any).organizationId ?? (caseData as any).organization_id}
+          ir={ir}
+        />
 
         <Tabs defaultValue="overview" className="space-y-4">
           <TabsList className="bg-surface-2 border border-border">
