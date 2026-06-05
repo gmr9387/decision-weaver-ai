@@ -13,6 +13,9 @@ import {
   FileSearch,
   ShieldCheck,
   Layers,
+  History,
+  Fingerprint,
+  Target,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import type { InferenceResult } from '@/lib/types';
@@ -31,7 +34,10 @@ type BatchResult = {
   firedRules: number;
   missingFacts: number;
   contradictions: number;
+  versionedRules: number;
+  snapshotRules: number;
   changed: boolean;
+  confidenceDelta?: number;
   error?: string;
 };
 
@@ -47,8 +53,12 @@ function getDecisionTrace(result: any) {
   return result?.decisionTrace ?? result?.decision_trace ?? null;
 }
 
+function getRules(result: any) {
+  return getArray(result?.firedRules ?? result?.fired_rules);
+}
+
 function getFiredRules(result: any) {
-  return getArray(result?.firedRules ?? result?.fired_rules).filter((r) => r?.fired);
+  return getRules(result).filter((r) => r?.fired);
 }
 
 function getMissingFacts(result: any) {
@@ -63,6 +73,14 @@ function getCandidateDecisions(result: any) {
   return getArray(result?.candidateDecisions ?? result?.candidate_decisions);
 }
 
+function getRuleVersion(rule: any) {
+  return rule?.ruleVersion ?? rule?.rule_version ?? null;
+}
+
+function getRuleSnapshotId(rule: any) {
+  return rule?.ruleSnapshotId ?? rule?.rule_snapshot_id ?? null;
+}
+
 function SimulationTrustSummary({
   simResult,
   baseline,
@@ -74,12 +92,15 @@ function SimulationTrustSummary({
 
   const sim: any = simResult;
   const base: any = baseline;
+  const allRules = getRules(sim);
   const firedRules = getFiredRules(sim);
   const missingFacts = getMissingFacts(sim);
   const contradictions = getContradictions(sim);
   const candidateDecisions = getCandidateDecisions(sim);
   const confidenceBreakdown = getConfidenceBreakdown(sim);
   const trace = getDecisionTrace(sim);
+  const versionedRules = allRules.filter((rule) => Boolean(getRuleVersion(rule)));
+  const snapshotRules = allRules.filter((rule) => Boolean(getRuleSnapshotId(rule)));
 
   const decisionChanged = base?.decision && base.decision !== sim.decision;
   const confidenceDelta = typeof base?.confidence === 'number'
@@ -95,7 +116,8 @@ function SimulationTrustSummary({
             <h3 className="text-body-md font-semibold text-foreground">Simulation Trust Package</h3>
           </div>
           <p className="text-body-sm text-muted-foreground">
-            This simulation ran without persistence and shows how the rule engine reacted to modified facts.
+            This simulation ran without persistence and shows how the rule engine reacted to modified facts,
+            including rule version and snapshot coverage where available.
           </p>
         </div>
 
@@ -117,12 +139,15 @@ function SimulationTrustSummary({
           <p className="mt-1 text-2xl font-semibold text-foreground">{firedRules.length}</p>
         </div>
         <div className="rounded-lg border border-border bg-surface-2 p-4">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Missing Facts</p>
-          <p className="mt-1 text-2xl font-semibold text-foreground">{missingFacts.length}</p>
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Versioned Rules</p>
+          <p className="mt-1 text-2xl font-semibold text-foreground">
+            {versionedRules.length}
+            <span className="text-sm text-muted-foreground"> / {allRules.length}</span>
+          </p>
         </div>
         <div className="rounded-lg border border-border bg-surface-2 p-4">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Contradictions</p>
-          <p className="mt-1 text-2xl font-semibold text-foreground">{contradictions.length}</p>
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Snapshots</p>
+          <p className="mt-1 text-2xl font-semibold text-foreground">{snapshotRules.length}</p>
         </div>
         <div className="rounded-lg border border-border bg-surface-2 p-4">
           <p className="text-xs uppercase tracking-wide text-muted-foreground">Trace</p>
@@ -255,8 +280,29 @@ export default function SimulationLab() {
       total > 0
         ? batchResults.reduce((sum, r) => sum + Number(r.simulatedConfidence ?? 0), 0) / total
         : 0;
+    const avgConfidenceDelta =
+      batchResults.filter((r) => typeof r.confidenceDelta === 'number').length > 0
+        ? batchResults
+            .filter((r) => typeof r.confidenceDelta === 'number')
+            .reduce((sum, r) => sum + Number(r.confidenceDelta ?? 0), 0) /
+          batchResults.filter((r) => typeof r.confidenceDelta === 'number').length
+        : 0;
 
-    return { total, changed, failed, avgConfidence };
+    const totalVersioned = batchResults.reduce((sum, r) => sum + r.versionedRules, 0);
+    const totalSnapshots = batchResults.reduce((sum, r) => sum + r.snapshotRules, 0);
+    const totalFired = batchResults.reduce((sum, r) => sum + r.firedRules, 0);
+
+    return {
+      total,
+      changed,
+      failed,
+      avgConfidence,
+      avgConfidenceDelta,
+      totalVersioned,
+      totalSnapshots,
+      totalFired,
+      changeRate: total > 0 ? Math.round((changed / total) * 100) : 0,
+    };
   }, [batchResults]);
 
   if (!activeCase) {
@@ -372,17 +418,26 @@ export default function SimulationLab() {
         if (error) throw error;
 
         const result = data as InferenceResult;
+        const allRules = getRules(result);
+        const baselineConfidence = target.inferenceResult?.confidence;
+        const simulatedConfidence = result.confidence;
 
         results.push({
           caseId: target.id,
           caseNumber: target.caseNumber,
           baselineDecision: target.inferenceResult?.decision,
           simulatedDecision: result.decision,
-          baselineConfidence: target.inferenceResult?.confidence,
-          simulatedConfidence: result.confidence,
+          baselineConfidence,
+          simulatedConfidence,
+          confidenceDelta:
+            typeof baselineConfidence === 'number'
+              ? Number((simulatedConfidence - baselineConfidence).toFixed(1))
+              : undefined,
           firedRules: getFiredRules(result).length,
           missingFacts: getMissingFacts(result).length,
           contradictions: getContradictions(result).length,
+          versionedRules: allRules.filter((rule) => Boolean(getRuleVersion(rule))).length,
+          snapshotRules: allRules.filter((rule) => Boolean(getRuleSnapshotId(rule))).length,
           changed: Boolean(target.inferenceResult?.decision && target.inferenceResult.decision !== result.decision),
         });
       } catch (err: any) {
@@ -394,6 +449,8 @@ export default function SimulationLab() {
           firedRules: 0,
           missingFacts: 0,
           contradictions: 0,
+          versionedRules: 0,
+          snapshotRules: 0,
           changed: false,
           error: err?.message || 'Simulation failed',
         });
@@ -436,7 +493,7 @@ export default function SimulationLab() {
             <div>
               <div className="flex items-center gap-2">
                 <Layers className="w-4 h-4 text-primary" />
-                <h3 className="text-body-md font-semibold text-foreground">Batch Simulation</h3>
+                <h3 className="text-body-md font-semibold text-foreground">Batch Impact Analysis</h3>
               </div>
               <p className="text-body-sm text-muted-foreground mt-1">
                 Run the current rule engine across up to 25 cases with facts. This does not persist results.
@@ -464,39 +521,72 @@ export default function SimulationLab() {
                   <p className="mt-1 text-2xl font-semibold text-foreground">{batchSummary.total}</p>
                 </div>
                 <div className="rounded-lg border border-border bg-surface-2 p-4">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Decision Changes</p>
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Change Rate</p>
+                  <p className="mt-1 text-2xl font-semibold text-foreground">{batchSummary.changeRate}%</p>
+                </div>
+                <div className="rounded-lg border border-border bg-surface-2 p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Avg Confidence Δ</p>
+                  <p className="mt-1 text-2xl font-semibold text-foreground">
+                    {batchSummary.avgConfidenceDelta >= 0 ? '+' : ''}
+                    {batchSummary.avgConfidenceDelta.toFixed(1)}%
+                  </p>
+                </div>
+                <div className="rounded-lg border border-border bg-surface-2 p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Snapshots</p>
+                  <p className="mt-1 text-2xl font-semibold text-foreground">{batchSummary.totalSnapshots}</p>
+                </div>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="rounded-lg border border-border bg-surface-2 p-4">
+                  <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
+                    <Target className="w-3.5 h-3.5" />
+                    Decisions Changed
+                  </div>
                   <p className="mt-1 text-2xl font-semibold text-foreground">{batchSummary.changed}</p>
                 </div>
                 <div className="rounded-lg border border-border bg-surface-2 p-4">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Failures</p>
-                  <p className="mt-1 text-2xl font-semibold text-foreground">{batchSummary.failed}</p>
+                  <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
+                    <History className="w-3.5 h-3.5" />
+                    Versioned Rules
+                  </div>
+                  <p className="mt-1 text-2xl font-semibold text-foreground">{batchSummary.totalVersioned}</p>
                 </div>
                 <div className="rounded-lg border border-border bg-surface-2 p-4">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Avg Sim Confidence</p>
-                  <p className="mt-1 text-2xl font-semibold text-foreground">{batchSummary.avgConfidence.toFixed(1)}%</p>
+                  <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
+                    <Fingerprint className="w-3.5 h-3.5" />
+                    Rules Fired
+                  </div>
+                  <p className="mt-1 text-2xl font-semibold text-foreground">{batchSummary.totalFired}</p>
                 </div>
               </div>
 
               <div className="overflow-hidden rounded-lg border border-border">
-                <div className="grid grid-cols-[1.1fr_1fr_1fr_90px_90px_90px] gap-3 bg-surface-2 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <div className="grid grid-cols-[1.1fr_1fr_1fr_90px_90px_90px_90px] gap-3 bg-surface-2 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   <span>Case</span>
                   <span>Baseline</span>
                   <span>Simulated</span>
+                  <span>Δ Conf</span>
                   <span>Rules</span>
-                  <span>Missing</span>
+                  <span>Versions</span>
                   <span>Quality</span>
                 </div>
 
                 {batchResults.map((row) => (
                   <div
                     key={row.caseId}
-                    className="grid grid-cols-[1.1fr_1fr_1fr_90px_90px_90px] gap-3 border-t border-border px-4 py-2 text-sm"
+                    className="grid grid-cols-[1.1fr_1fr_1fr_90px_90px_90px_90px] gap-3 border-t border-border px-4 py-2 text-sm"
                   >
                     <span className="font-mono text-foreground truncate">{row.caseNumber}</span>
                     <span className="text-muted-foreground truncate">{row.baselineDecision ?? 'none'}</span>
                     <span className="text-foreground truncate">{row.error ? 'failed' : row.simulatedDecision ?? 'none'}</span>
+                    <span className="font-mono">
+                      {typeof row.confidenceDelta === 'number'
+                        ? `${row.confidenceDelta >= 0 ? '+' : ''}${row.confidenceDelta}%`
+                        : '—'}
+                    </span>
                     <span className="font-mono">{row.firedRules}</span>
-                    <span className="font-mono">{row.missingFacts}</span>
+                    <span className="font-mono">{row.versionedRules}/{row.snapshotRules}</span>
                     <span>
                       {row.error ? (
                         <Badge variant="destructive">Error</Badge>
