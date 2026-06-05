@@ -12,6 +12,7 @@ import {
   GitCompare,
   FileSearch,
   ShieldCheck,
+  Layers,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import type { InferenceResult } from '@/lib/types';
@@ -19,6 +20,20 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuthGate } from '@/hooks/use-auth-gate';
 import { FactsEditor } from '@/components/simulation/FactsEditor';
 import { SimulationResult } from '@/components/simulation/SimulationResult';
+
+type BatchResult = {
+  caseId: string;
+  caseNumber: string;
+  baselineDecision?: string;
+  simulatedDecision?: string;
+  baselineConfidence?: number;
+  simulatedConfidence?: number;
+  firedRules: number;
+  missingFacts: number;
+  contradictions: number;
+  changed: boolean;
+  error?: string;
+};
 
 function getArray(value: unknown): any[] {
   return Array.isArray(value) ? value : [];
@@ -80,7 +95,7 @@ function SimulationTrustSummary({
             <h3 className="text-body-md font-semibold text-foreground">Simulation Trust Package</h3>
           </div>
           <p className="text-body-sm text-muted-foreground">
-            This simulation ran without persistence and shows how the rule engine reacted to the modified facts.
+            This simulation ran without persistence and shows how the rule engine reacted to modified facts.
           </p>
         </div>
 
@@ -101,17 +116,14 @@ function SimulationTrustSummary({
           <p className="text-xs uppercase tracking-wide text-muted-foreground">Rules Fired</p>
           <p className="mt-1 text-2xl font-semibold text-foreground">{firedRules.length}</p>
         </div>
-
         <div className="rounded-lg border border-border bg-surface-2 p-4">
           <p className="text-xs uppercase tracking-wide text-muted-foreground">Missing Facts</p>
           <p className="mt-1 text-2xl font-semibold text-foreground">{missingFacts.length}</p>
         </div>
-
         <div className="rounded-lg border border-border bg-surface-2 p-4">
           <p className="text-xs uppercase tracking-wide text-muted-foreground">Contradictions</p>
           <p className="mt-1 text-2xl font-semibold text-foreground">{contradictions.length}</p>
         </div>
-
         <div className="rounded-lg border border-border bg-surface-2 p-4">
           <p className="text-xs uppercase tracking-wide text-muted-foreground">Trace</p>
           <p className="mt-1 truncate font-mono text-xs text-foreground">
@@ -126,7 +138,6 @@ function SimulationTrustSummary({
             <GitCompare className="w-4 h-4 text-primary" />
             <h4 className="font-semibold text-foreground">Decision Comparison</h4>
           </div>
-
           <div className="space-y-2 text-sm">
             <div className="flex justify-between gap-4">
               <span className="text-muted-foreground">Baseline</span>
@@ -148,7 +159,6 @@ function SimulationTrustSummary({
             <FileSearch className="w-4 h-4 text-primary" />
             <h4 className="font-semibold text-foreground">Candidate Decisions</h4>
           </div>
-
           <div className="space-y-2 text-sm">
             {candidateDecisions.length > 0 ? (
               candidateDecisions.slice(0, 5).map((candidate: any) => (
@@ -172,7 +182,6 @@ function SimulationTrustSummary({
             )}
             <h4 className="font-semibold text-foreground">Quality Checks</h4>
           </div>
-
           <div className="space-y-2 text-sm">
             {contradictions.length > 0 ? (
               contradictions.slice(0, 3).map((item: string) => (
@@ -213,18 +222,42 @@ function SimulationTrustSummary({
 export default function SimulationLab() {
   const { data: cases = [] } = useCases();
   const { data: rules = [] } = useRules();
+
   const casesWithFacts = useMemo(() => cases.filter((c) => c.facts.length > 0), [cases]);
-  const defaultCase = useMemo(() => casesWithFacts.find((c) => c.inferenceResult) || casesWithFacts[0], [casesWithFacts]);
+  const defaultCase = useMemo(
+    () => casesWithFacts.find((c) => c.inferenceResult) || casesWithFacts[0],
+    [casesWithFacts],
+  );
 
   const [selectedCaseId, setSelectedCaseId] = useState<string | undefined>(undefined);
-  const activeCase = selectedCaseId ? cases.find((c) => c.id === selectedCaseId) || defaultCase : defaultCase;
+  const activeCase = selectedCaseId
+    ? cases.find((c) => c.id === selectedCaseId) || defaultCase
+    : defaultCase;
 
   const [factOverrides, setFactOverrides] = useState<Record<string, string>>({});
   const [simResult, setSimResult] = useState<InferenceResult | null>(null);
   const [running, setRunning] = useState(false);
 
+  const [batchRunning, setBatchRunning] = useState(false);
+  const [batchResults, setBatchResults] = useState<BatchResult[]>([]);
+
   const { toast } = useToast();
   const { requireAuth } = useAuthGate();
+
+  const enabledRuleCount = rules.filter((r) => r.enabled).length;
+  const hasOverrides = Object.keys(factOverrides).length > 0;
+
+  const batchSummary = useMemo(() => {
+    const total = batchResults.length;
+    const changed = batchResults.filter((r) => r.changed).length;
+    const failed = batchResults.filter((r) => r.error).length;
+    const avgConfidence =
+      total > 0
+        ? batchResults.reduce((sum, r) => sum + Number(r.simulatedConfidence ?? 0), 0) / total
+        : 0;
+
+    return { total, changed, failed, avgConfidence };
+  }, [batchResults]);
 
   if (!activeCase) {
     return (
@@ -237,8 +270,6 @@ export default function SimulationLab() {
   }
 
   const baseline = activeCase.inferenceResult;
-  const hasOverrides = Object.keys(factOverrides).length > 0;
-  const enabledRuleCount = rules.filter((r) => r.enabled).length;
 
   const handleOverride = (key: string, value: string) => {
     setFactOverrides((prev) => {
@@ -256,24 +287,29 @@ export default function SimulationLab() {
     setSimResult(null);
   };
 
+  const buildFacts = (targetCase: typeof activeCase) => {
+    const mergedFacts: Record<string, unknown> = {};
+
+    for (const fact of targetCase.facts) {
+      mergedFacts[fact.key] =
+        targetCase.id === activeCase.id && factOverrides[fact.key] !== undefined
+          ? factOverrides[fact.key]
+          : fact.value;
+    }
+
+    return mergedFacts;
+  };
+
   const runSimulation = async () => {
     if (!requireAuth('run simulations')) return;
 
     setRunning(true);
 
     try {
-      const mergedFacts: Record<string, unknown> = {};
-
-      for (const fact of activeCase.facts) {
-        mergedFacts[fact.key] = factOverrides[fact.key] !== undefined
-          ? factOverrides[fact.key]
-          : fact.value;
-      }
-
       const { data, error } = await supabase.functions.invoke('run-inference', {
         body: {
           caseId: activeCase.id,
-          facts: mergedFacts,
+          facts: buildFacts(activeCase),
           mode: 'instant',
           persist: false,
         },
@@ -303,6 +339,77 @@ export default function SimulationLab() {
     }
   };
 
+  const runBatchSimulation = async () => {
+    if (!requireAuth('run batch simulations')) return;
+
+    const targets = casesWithFacts.slice(0, 25);
+
+    if (targets.length === 0) {
+      toast({
+        title: 'No cases available',
+        description: 'Batch simulation needs cases with facts.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setBatchRunning(true);
+    setBatchResults([]);
+
+    const results: BatchResult[] = [];
+
+    for (const target of targets) {
+      try {
+        const { data, error } = await supabase.functions.invoke('run-inference', {
+          body: {
+            caseId: target.id,
+            facts: buildFacts(target),
+            mode: 'instant',
+            persist: false,
+          },
+        });
+
+        if (error) throw error;
+
+        const result = data as InferenceResult;
+
+        results.push({
+          caseId: target.id,
+          caseNumber: target.caseNumber,
+          baselineDecision: target.inferenceResult?.decision,
+          simulatedDecision: result.decision,
+          baselineConfidence: target.inferenceResult?.confidence,
+          simulatedConfidence: result.confidence,
+          firedRules: getFiredRules(result).length,
+          missingFacts: getMissingFacts(result).length,
+          contradictions: getContradictions(result).length,
+          changed: Boolean(target.inferenceResult?.decision && target.inferenceResult.decision !== result.decision),
+        });
+      } catch (err: any) {
+        results.push({
+          caseId: target.id,
+          caseNumber: target.caseNumber,
+          baselineDecision: target.inferenceResult?.decision,
+          baselineConfidence: target.inferenceResult?.confidence,
+          firedRules: 0,
+          missingFacts: 0,
+          contradictions: 0,
+          changed: false,
+          error: err?.message || 'Simulation failed',
+        });
+      }
+
+      setBatchResults([...results]);
+    }
+
+    setBatchRunning(false);
+
+    toast({
+      title: 'Batch simulation complete',
+      description: `${results.length} case${results.length !== 1 ? 's' : ''} tested · ${results.filter((r) => r.changed).length} decision change${results.filter((r) => r.changed).length !== 1 ? 's' : ''}.`,
+    });
+  };
+
   return (
     <AppLayout>
       <div className="p-6 lg:p-8 space-y-6">
@@ -322,6 +429,88 @@ export default function SimulationLab() {
           <Badge variant={hasOverrides ? 'warning' : 'secondary'}>
             {hasOverrides ? `${Object.keys(factOverrides).length} override${Object.keys(factOverrides).length !== 1 ? 's' : ''}` : 'No overrides'}
           </Badge>
+        </div>
+
+        <div className="rounded-xl border border-border bg-surface-1 p-5 space-y-4">
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div>
+              <div className="flex items-center gap-2">
+                <Layers className="w-4 h-4 text-primary" />
+                <h3 className="text-body-md font-semibold text-foreground">Batch Simulation</h3>
+              </div>
+              <p className="text-body-sm text-muted-foreground mt-1">
+                Run the current rule engine across up to 25 cases with facts. This does not persist results.
+              </p>
+            </div>
+
+            <Button variant="outline" className="gap-2" disabled={batchRunning} onClick={runBatchSimulation}>
+              {batchRunning ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" /> Running Batch...
+                </>
+              ) : (
+                <>
+                  <Layers className="w-4 h-4" /> Run Batch Simulation
+                </>
+              )}
+            </Button>
+          </div>
+
+          {batchResults.length > 0 && (
+            <>
+              <div className="grid gap-3 md:grid-cols-4">
+                <div className="rounded-lg border border-border bg-surface-2 p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Cases Tested</p>
+                  <p className="mt-1 text-2xl font-semibold text-foreground">{batchSummary.total}</p>
+                </div>
+                <div className="rounded-lg border border-border bg-surface-2 p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Decision Changes</p>
+                  <p className="mt-1 text-2xl font-semibold text-foreground">{batchSummary.changed}</p>
+                </div>
+                <div className="rounded-lg border border-border bg-surface-2 p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Failures</p>
+                  <p className="mt-1 text-2xl font-semibold text-foreground">{batchSummary.failed}</p>
+                </div>
+                <div className="rounded-lg border border-border bg-surface-2 p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Avg Sim Confidence</p>
+                  <p className="mt-1 text-2xl font-semibold text-foreground">{batchSummary.avgConfidence.toFixed(1)}%</p>
+                </div>
+              </div>
+
+              <div className="overflow-hidden rounded-lg border border-border">
+                <div className="grid grid-cols-[1.1fr_1fr_1fr_90px_90px_90px] gap-3 bg-surface-2 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <span>Case</span>
+                  <span>Baseline</span>
+                  <span>Simulated</span>
+                  <span>Rules</span>
+                  <span>Missing</span>
+                  <span>Quality</span>
+                </div>
+
+                {batchResults.map((row) => (
+                  <div
+                    key={row.caseId}
+                    className="grid grid-cols-[1.1fr_1fr_1fr_90px_90px_90px] gap-3 border-t border-border px-4 py-2 text-sm"
+                  >
+                    <span className="font-mono text-foreground truncate">{row.caseNumber}</span>
+                    <span className="text-muted-foreground truncate">{row.baselineDecision ?? 'none'}</span>
+                    <span className="text-foreground truncate">{row.error ? 'failed' : row.simulatedDecision ?? 'none'}</span>
+                    <span className="font-mono">{row.firedRules}</span>
+                    <span className="font-mono">{row.missingFacts}</span>
+                    <span>
+                      {row.error ? (
+                        <Badge variant="destructive">Error</Badge>
+                      ) : row.changed ? (
+                        <Badge variant="warning">Changed</Badge>
+                      ) : (
+                        <Badge variant="secondary">Stable</Badge>
+                      )}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </div>
 
         <div className="grid lg:grid-cols-2 gap-6">
