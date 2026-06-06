@@ -12,6 +12,8 @@ import {
   ShieldCheck,
   TrendingUp,
   TrendingDown,
+  History,
+  Fingerprint,
 } from 'lucide-react';
 import type { InferenceResult } from '@/lib/types';
 
@@ -52,6 +54,18 @@ function getCandidateDecisions(result: any) {
   return arr(result?.candidateDecisions ?? result?.candidate_decisions);
 }
 
+function getRuleName(rule: any) {
+  return rule?.ruleName ?? rule?.rule_name ?? rule?.name ?? 'Unnamed rule';
+}
+
+function getRuleVersion(rule: any) {
+  return rule?.ruleVersion ?? rule?.rule_version ?? null;
+}
+
+function getRuleSnapshotId(rule: any) {
+  return rule?.ruleSnapshotId ?? rule?.rule_snapshot_id ?? null;
+}
+
 export function SimulationResult({ simResult, baseline }: SimulationResultProps) {
   const [showFiredRules, setShowFiredRules] = useState(false);
   const [showBreakdown, setShowBreakdown] = useState(false);
@@ -67,6 +81,9 @@ export function SimulationResult({ simResult, baseline }: SimulationResultProps)
   const contradictions = getContradictions(sim);
   const candidateDecisions = getCandidateDecisions(sim);
   const confidenceBreakdown = getConfidenceBreakdown(sim);
+
+  const versionedRules = allRules.filter((rule) => Boolean(getRuleVersion(rule)));
+  const snapshotRules = allRules.filter((rule) => Boolean(getRuleSnapshotId(rule)));
 
   const decisionChanged = Boolean(base?.decision && base.decision !== sim.decision);
   const confidenceDelta =
@@ -103,7 +120,7 @@ export function SimulationResult({ simResult, baseline }: SimulationResultProps)
     decisionChanged
       ? `Decision changed from ${base?.decision ?? 'unknown'} to ${sim.decision}. Confidence moved ${
           confidenceDelta !== null && confidenceDelta >= 0 ? '+' : ''
-        }${confidenceDelta ?? 0}%. Review the fired rules, missing facts, and contradictions before using this scenario.`
+        }${confidenceDelta ?? 0}%. Review fired rules, missing facts, contradictions, and rule versions before using this scenario.`
       : `Decision remained ${sim.decision}. Confidence moved ${
           confidenceDelta !== null && confidenceDelta >= 0 ? '+' : ''
         }${confidenceDelta ?? 0}%. Scenario stability is ${stabilityBand.toLowerCase()}.`;
@@ -174,6 +191,26 @@ export function SimulationResult({ simResult, baseline }: SimulationResultProps)
             </div>
           </div>
         )}
+
+        <div className="grid gap-3 md:grid-cols-3">
+          <div className="rounded-lg border border-border bg-background/40 p-3">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Rules Evaluated</p>
+            <p className="mt-1 text-lg font-semibold text-foreground">{allRules.length}</p>
+          </div>
+
+          <div className="rounded-lg border border-border bg-background/40 p-3">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Versioned Rules</p>
+            <p className="mt-1 text-lg font-semibold text-foreground">
+              {versionedRules.length}
+              <span className="text-xs text-muted-foreground"> / {allRules.length}</span>
+            </p>
+          </div>
+
+          <div className="rounded-lg border border-border bg-background/40 p-3">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Snapshots Linked</p>
+            <p className="mt-1 text-lg font-semibold text-foreground">{snapshotRules.length}</p>
+          </div>
+        </div>
       </div>
 
       <div className="rounded-xl border border-border bg-surface-2 p-4">
@@ -196,7 +233,7 @@ export function SimulationResult({ simResult, baseline }: SimulationResultProps)
               {positiveDrivers.length > 0 ? (
                 positiveDrivers.map((rule) => (
                   <div key={rule.ruleId || rule.name} className="flex items-center justify-between gap-3 text-caption">
-                    <span className="text-foreground">{rule.name}</span>
+                    <span className="text-foreground">{getRuleName(rule)}</span>
                     <span className="font-mono text-success">+{rule.confidenceImpact}</span>
                   </div>
                 ))
@@ -215,7 +252,7 @@ export function SimulationResult({ simResult, baseline }: SimulationResultProps)
               {negativeDrivers.length > 0 ? (
                 negativeDrivers.map((rule) => (
                   <div key={rule.ruleId || rule.name} className="flex items-center justify-between gap-3 text-caption">
-                    <span className="text-foreground">{rule.name}</span>
+                    <span className="text-foreground">{getRuleName(rule)}</span>
                     <span className="font-mono text-destructive">{rule.confidenceImpact}</span>
                   </div>
                 ))
@@ -287,43 +324,65 @@ export function SimulationResult({ simResult, baseline }: SimulationResultProps)
 
       {showFiredRules && (
         <div className="space-y-2 max-h-72 overflow-y-auto">
-          {allRules.map((rule, i) => (
-            <div
-              key={i}
-              className={`p-3 rounded-lg text-caption ${
-                rule.fired ? 'bg-primary/5 border border-primary/20' : 'bg-surface-2 border border-border'
-              }`}
-            >
-              <div className="flex items-center gap-2 mb-1 flex-wrap">
-                {rule.fired ? (
-                  <Zap className="w-3 h-3 text-primary" />
-                ) : (
-                  <span className="w-3 h-3 rounded-full bg-muted-foreground/30" />
+          {allRules.map((rule, i) => {
+            const ruleVersion = getRuleVersion(rule);
+            const ruleSnapshotId = getRuleSnapshotId(rule);
+
+            return (
+              <div
+                key={i}
+                className={`p-3 rounded-lg text-caption ${
+                  rule.fired ? 'bg-primary/5 border border-primary/20' : 'bg-surface-2 border border-border'
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  {rule.fired ? (
+                    <Zap className="w-3 h-3 text-primary" />
+                  ) : (
+                    <span className="w-3 h-3 rounded-full bg-muted-foreground/30" />
+                  )}
+                  <span className="font-medium text-foreground">{getRuleName(rule)}</span>
+                  <Badge variant="outline" className="text-[10px] capitalize">{rule.type}</Badge>
+                  <Badge variant="secondary" className="text-[10px]">P{rule.priority}</Badge>
+
+                  {ruleVersion ? (
+                    <Badge variant="confidence" className="text-[10px] gap-1">
+                      <History className="w-3 h-3" />
+                      v{ruleVersion}
+                    </Badge>
+                  ) : (
+                    <Badge variant="warning" className="text-[10px]">Unversioned</Badge>
+                  )}
+
+                  {ruleSnapshotId && (
+                    <Badge variant="outline" className="text-[10px] gap-1 font-mono">
+                      <Fingerprint className="w-3 h-3" />
+                      {String(ruleSnapshotId).slice(0, 8)}
+                    </Badge>
+                  )}
+
+                  {rule.fired && (
+                    <span className={`font-mono ${Number(rule.confidenceImpact) >= 0 ? 'text-success' : 'text-destructive'}`}>
+                      {Number(rule.confidenceImpact) >= 0 ? '+' : ''}
+                      {rule.confidenceImpact}
+                    </span>
+                  )}
+                </div>
+
+                {rule.explanation && (
+                  <p className="text-muted-foreground ml-5 mb-1">{rule.explanation}</p>
                 )}
-                <span className="font-medium text-foreground">{rule.name}</span>
-                <Badge variant="outline" className="text-[10px] capitalize">{rule.type}</Badge>
-                <Badge variant="secondary" className="text-[10px]">P{rule.priority}</Badge>
-                {rule.fired && (
-                  <span className={`font-mono ${Number(rule.confidenceImpact) >= 0 ? 'text-success' : 'text-destructive'}`}>
-                    {Number(rule.confidenceImpact) >= 0 ? '+' : ''}
-                    {rule.confidenceImpact}
-                  </span>
+
+                {arr(rule.conditionsMet).length > 0 && (
+                  <p className="text-success/80 ml-5">✓ {arr(rule.conditionsMet).join(', ')}</p>
+                )}
+
+                {arr(rule.conditionsUnmet).length > 0 && (
+                  <p className="text-destructive/70 ml-5">✗ {arr(rule.conditionsUnmet).join(', ')}</p>
                 )}
               </div>
-
-              {rule.explanation && (
-                <p className="text-muted-foreground ml-5 mb-1">{rule.explanation}</p>
-              )}
-
-              {arr(rule.conditionsMet).length > 0 && (
-                <p className="text-success/80 ml-5">✓ {arr(rule.conditionsMet).join(', ')}</p>
-              )}
-
-              {arr(rule.conditionsUnmet).length > 0 && (
-                <p className="text-destructive/70 ml-5">✗ {arr(rule.conditionsUnmet).join(', ')}</p>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -346,6 +405,18 @@ export function SimulationResult({ simResult, baseline }: SimulationResultProps)
             Deterministic decision preserved:{' '}
             <span className="font-mono text-foreground">
               {String(trace?.deterministicDecisionPreserved ?? sim?.deterministicDecisionPreserved ?? true)}
+            </span>
+          </div>
+          <div className="text-muted-foreground">
+            Version coverage:{' '}
+            <span className="font-mono text-foreground">
+              {versionedRules.length}/{allRules.length}
+            </span>
+          </div>
+          <div className="text-muted-foreground">
+            Snapshot coverage:{' '}
+            <span className="font-mono text-foreground">
+              {snapshotRules.length}/{allRules.length}
             </span>
           </div>
         </div>
