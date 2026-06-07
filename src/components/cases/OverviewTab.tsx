@@ -13,6 +13,8 @@ import {
   Database,
   GitBranch,
   FileSearch,
+  History,
+  Fingerprint,
 } from 'lucide-react';
 import type { Case, InferenceResult } from '@/lib/types';
 import { ConfidenceBreakdownViz } from './ConfidenceBreakdownViz';
@@ -34,8 +36,12 @@ function getTrace(ir: any) {
   return ir?.decisionTrace ?? ir?.decision_trace ?? null;
 }
 
+function getAllRules(ir: any) {
+  return arr(ir?.firedRules ?? ir?.fired_rules);
+}
+
 function getFiredRules(ir: any) {
-  return arr(ir?.firedRules ?? ir?.fired_rules).filter((r) => r?.fired);
+  return getAllRules(ir).filter((r) => r?.fired);
 }
 
 function getMissingFacts(ir: any) {
@@ -50,14 +56,30 @@ function getCandidateDecisions(ir: any) {
   return arr(ir?.candidateDecisions ?? ir?.candidate_decisions);
 }
 
+function getRuleName(rule: any) {
+  return rule?.ruleName ?? rule?.rule_name ?? rule?.name ?? 'Unnamed rule';
+}
+
+function getRuleVersion(rule: any) {
+  return rule?.ruleVersion ?? rule?.rule_version ?? null;
+}
+
+function getRuleSnapshotId(rule: any) {
+  return rule?.ruleSnapshotId ?? rule?.rule_snapshot_id ?? null;
+}
+
 export function OverviewTab({ caseData, ir, onRunInference, isRunning, canRun }: OverviewTabProps) {
   const DecIcon = ir ? (decisionIcons[ir.decision] || FileText) : FileText;
 
   const trace = getTrace(ir);
+  const allRules = getAllRules(ir);
   const firedRules = getFiredRules(ir);
   const missingFacts = getMissingFacts(ir);
   const contradictions = getContradictions(ir);
   const candidateDecisions = getCandidateDecisions(ir);
+
+  const versionedRules = allRules.filter((rule) => Boolean(getRuleVersion(rule)));
+  const snapshotRules = allRules.filter((rule) => Boolean(getRuleSnapshotId(rule)));
 
   const positiveDrivers = firedRules
     .filter((r) => Number(r.confidenceImpact ?? 0) > 0)
@@ -79,7 +101,7 @@ export function OverviewTab({ caseData, ir, onRunInference, isRunning, canRun }:
                 <DecIcon className="w-4 h-4 text-primary" /> Decision Command Summary
               </h3>
               <p className="text-caption text-muted-foreground mt-1">
-                Executive view of this case’s decision, evidence gaps, rule activity, and trace status.
+                Executive view of this case’s decision, evidence gaps, rule activity, trace status, and replay metadata.
               </p>
             </div>
 
@@ -92,7 +114,7 @@ export function OverviewTab({ caseData, ir, onRunInference, isRunning, canRun }:
                   {ir.confidence.toFixed(1)}%
                 </Badge>
                 <Badge variant="outline" className="capitalize">
-                  {ir.confidenceBand}
+                  {ir.confidenceBand.replace('_', ' ')}
                 </Badge>
               </div>
             )}
@@ -126,6 +148,40 @@ export function OverviewTab({ caseData, ir, onRunInference, isRunning, canRun }:
                 </div>
               </div>
 
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="rounded-lg border border-border bg-surface-2 p-4">
+                  <div className="flex items-center gap-2">
+                    <GitBranch className="w-4 h-4 text-primary" />
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Rules Evaluated</p>
+                  </div>
+                  <p className="mt-1 text-2xl font-semibold text-foreground">
+                    {trace?.rulesEvaluated ?? allRules.length}
+                  </p>
+                </div>
+
+                <div className="rounded-lg border border-border bg-surface-2 p-4">
+                  <div className="flex items-center gap-2">
+                    <History className="w-4 h-4 text-primary" />
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Version Coverage</p>
+                  </div>
+                  <p className="mt-1 text-2xl font-semibold text-foreground">
+                    {versionedRules.length}
+                    <span className="text-sm text-muted-foreground"> / {allRules.length}</span>
+                  </p>
+                </div>
+
+                <div className="rounded-lg border border-border bg-surface-2 p-4">
+                  <div className="flex items-center gap-2">
+                    <Fingerprint className="w-4 h-4 text-primary" />
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Snapshot Coverage</p>
+                  </div>
+                  <p className="mt-1 text-2xl font-semibold text-foreground">
+                    {snapshotRules.length}
+                    <span className="text-sm text-muted-foreground"> / {allRules.length}</span>
+                  </p>
+                </div>
+              </div>
+
               <div className="flex items-center gap-2 flex-wrap">
                 <Badge variant="secondary">Mode: {ir.mode}</Badge>
                 <Badge variant="secondary">{firedRules.length} rules fired</Badge>
@@ -133,6 +189,9 @@ export function OverviewTab({ caseData, ir, onRunInference, isRunning, canRun }:
                 {contradictions.length > 0 && <Badge variant="critical">{contradictions.length} contradictions</Badge>}
                 {(ir as any).deterministicDecisionPreserved && (
                   <Badge variant="outline">Deterministic preserved</Badge>
+                )}
+                {snapshotRules.length < allRules.length && allRules.length > 0 && (
+                  <Badge variant="warning">Partial replay metadata</Badge>
                 )}
               </div>
             </>
@@ -177,9 +236,23 @@ export function OverviewTab({ caseData, ir, onRunInference, isRunning, canRun }:
             <div className="space-y-3">
               {positiveDrivers.length > 0 ? (
                 positiveDrivers.map((rule) => (
-                  <div key={rule.ruleId || rule.name} className="flex items-center justify-between p-3 rounded-lg bg-surface-2">
-                    <span className="text-body-sm text-foreground">{rule.name}</span>
-                    <span className="font-mono text-success">+{rule.confidenceImpact}</span>
+                  <div key={rule.ruleId || rule.name} className="rounded-lg bg-surface-2 p-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-body-sm text-foreground">{getRuleName(rule)}</span>
+                      <span className="font-mono text-success">+{rule.confidenceImpact}</span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {getRuleVersion(rule) ? (
+                        <Badge variant="confidence" className="text-caption">v{getRuleVersion(rule)}</Badge>
+                      ) : (
+                        <Badge variant="warning" className="text-caption">Unversioned</Badge>
+                      )}
+                      {getRuleSnapshotId(rule) && (
+                        <Badge variant="outline" className="font-mono text-caption">
+                          snapshot:{String(getRuleSnapshotId(rule)).slice(0, 8)}
+                        </Badge>
+                      )}
+                    </div>
                   </div>
                 ))
               ) : (
@@ -195,9 +268,23 @@ export function OverviewTab({ caseData, ir, onRunInference, isRunning, canRun }:
             <div className="space-y-3">
               {negativeDrivers.length > 0 ? (
                 negativeDrivers.map((rule) => (
-                  <div key={rule.ruleId || rule.name} className="flex items-center justify-between p-3 rounded-lg bg-surface-2">
-                    <span className="text-body-sm text-foreground">{rule.name}</span>
-                    <span className="font-mono text-destructive">{rule.confidenceImpact}</span>
+                  <div key={rule.ruleId || rule.name} className="rounded-lg bg-surface-2 p-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-body-sm text-foreground">{getRuleName(rule)}</span>
+                      <span className="font-mono text-destructive">{rule.confidenceImpact}</span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {getRuleVersion(rule) ? (
+                        <Badge variant="confidence" className="text-caption">v{getRuleVersion(rule)}</Badge>
+                      ) : (
+                        <Badge variant="warning" className="text-caption">Unversioned</Badge>
+                      )}
+                      {getRuleSnapshotId(rule) && (
+                        <Badge variant="outline" className="font-mono text-caption">
+                          snapshot:{String(getRuleSnapshotId(rule)).slice(0, 8)}
+                        </Badge>
+                      )}
+                    </div>
                   </div>
                 ))
               ) : missingFacts.length > 0 ? (
@@ -272,7 +359,7 @@ export function OverviewTab({ caseData, ir, onRunInference, isRunning, canRun }:
           <h3 className="text-body-md font-semibold text-foreground mb-4 flex items-center gap-2">
             <Brain className="w-4 h-4 text-primary" /> Candidate Decisions
           </h3>
-          {ir ? (
+          {ir && candidateDecisions.length > 0 ? (
             <div className="space-y-3">
               {candidateDecisions.map((cd, i) => (
                 <div key={i} className="space-y-1">
@@ -315,17 +402,29 @@ export function OverviewTab({ caseData, ir, onRunInference, isRunning, canRun }:
             </div>
             <div>
               <p className="text-muted-foreground">Rules Evaluated</p>
-              <p className="text-foreground">{trace?.rulesEvaluated ?? ir.firedRules.length}</p>
+              <p className="text-foreground">{trace?.rulesEvaluated ?? allRules.length}</p>
             </div>
             <div>
-              <p className="text-muted-foreground">Rules Fired</p>
-              <p className="text-foreground">{trace?.rulesFired ?? firedRules.length}</p>
+              <p className="text-muted-foreground">Versioned Rules</p>
+              <p className="text-foreground">{versionedRules.length} / {allRules.length}</p>
             </div>
             <div>
-              <p className="text-muted-foreground">Mode</p>
-              <p className="capitalize text-foreground">{ir.mode}</p>
+              <p className="text-muted-foreground">Snapshot Links</p>
+              <p className="text-foreground">{snapshotRules.length} / {allRules.length}</p>
             </div>
           </div>
+
+          {snapshotRules.length < allRules.length && allRules.length > 0 && (
+            <div className="mt-4 rounded-lg border border-warning/20 bg-warning/10 p-3">
+              <div className="flex items-center gap-2 text-warning">
+                <AlertTriangle className="h-4 w-4" />
+                <span className="text-caption font-semibold">Partial replay metadata</span>
+              </div>
+              <p className="mt-1 text-caption text-muted-foreground">
+                Some rules do not have snapshot IDs attached to this inference. Older runs may be partially replayable only.
+              </p>
+            </div>
+          )}
         </div>
       )}
     </TabsContent>
