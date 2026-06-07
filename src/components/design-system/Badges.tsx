@@ -2,11 +2,11 @@ import { Badge } from '@/components/ui/badge';
 import type { ReactNode } from 'react';
 
 interface DecisionBadgeProps {
-  decision: string;
+  decision?: string | null;
   className?: string;
 }
 
-const variantMap: Record<string, string> = {
+const decisionVariantMap: Record<string, string> = {
   approve: 'success',
   deny: 'destructive',
   escalate: 'warning',
@@ -18,51 +18,97 @@ const variantMap: Record<string, string> = {
   unresolved: 'outline',
 };
 
+function cleanLabel(value?: string | null) {
+  return String(value || 'unresolved').replace(/_/g, ' ');
+}
+
 export function DecisionBadge({ decision, className }: DecisionBadgeProps) {
-  const variant = (variantMap[decision] ?? 'outline') as any;
+  const normalized = String(decision || 'unresolved');
+  const variant = (decisionVariantMap[normalized] ?? 'outline') as any;
+
   return (
     <Badge variant={variant} className={`capitalize ${className ?? ''}`}>
-      {String(decision || 'unresolved').replace('_', ' ')}
+      {cleanLabel(normalized)}
     </Badge>
   );
 }
 
 interface ConfidenceBadgeProps {
-  value: number;
-  band?: string;
+  value?: number | null;
+  band?: string | null;
   className?: string;
 }
 
 export function ConfidenceBadge({ value, band, className }: ConfidenceBadgeProps) {
+  const safeValue = Number(value ?? 0);
+
   return (
     <Badge variant="confidence" className={`font-mono ${className ?? ''}`}>
-      {Number(value || 0).toFixed(1)}%{band ? ` · ${band.replace('_', ' ')}` : ''}
+      {safeValue.toFixed(1)}%
+      {band ? ` · ${cleanLabel(band)}` : ''}
     </Badge>
   );
 }
 
 interface HealthBadgeProps {
-  status: 'healthy' | 'watch' | 'needs_attention' | string;
+  status?: 'healthy' | 'watch' | 'needs_attention' | 'degraded' | 'offline' | string | null;
   className?: string;
   children?: ReactNode;
 }
 
 export function HealthBadge({ status, className, children }: HealthBadgeProps) {
+  const normalized = String(status || 'watch');
+
   const variant =
-    status === 'healthy'
+    normalized === 'healthy'
       ? 'success'
-      : status === 'needs_attention'
+      : normalized === 'needs_attention' || normalized === 'offline'
         ? 'destructive'
-        : 'warning';
+        : normalized === 'degraded'
+          ? 'warning'
+          : 'warning';
+
   const label =
-    status === 'healthy'
+    normalized === 'healthy'
       ? 'Healthy'
-      : status === 'needs_attention'
+      : normalized === 'needs_attention'
         ? 'Needs Attention'
-        : 'Watch';
+        : normalized === 'offline'
+          ? 'Offline'
+          : normalized === 'degraded'
+            ? 'Degraded'
+            : 'Watch';
+
   return (
     <Badge variant={variant as any} className={`capitalize ${className ?? ''}`}>
       {children ?? label}
+    </Badge>
+  );
+}
+
+interface StatusBadgeProps {
+  status?: string | null;
+  className?: string;
+  children?: ReactNode;
+}
+
+export function StatusBadge({ status, className, children }: StatusBadgeProps) {
+  const normalized = String(status || 'unknown');
+
+  const variant =
+    ['active', 'enabled', 'success', 'completed', 'resolved', 'healthy'].includes(normalized)
+      ? 'success'
+      : ['failed', 'error', 'critical', 'offline', 'denied'].includes(normalized)
+        ? 'destructive'
+        : ['warning', 'pending', 'processing', 'degraded', 'escalated'].includes(normalized)
+          ? 'warning'
+          : ['info', 'review', 'in_review'].includes(normalized)
+            ? 'info'
+            : 'secondary';
+
+  return (
+    <Badge variant={variant as any} className={`capitalize ${className ?? ''}`}>
+      {children ?? cleanLabel(normalized)}
     </Badge>
   );
 }
