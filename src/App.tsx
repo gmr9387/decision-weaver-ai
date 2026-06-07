@@ -15,6 +15,7 @@ import CaseDetail from "./pages/CaseDetail";
 import RulesStudio from "./pages/RulesStudio";
 import SimulationLab from "./pages/SimulationLab";
 import Analytics from "./pages/Analytics";
+import Operations from "./pages/Operations";
 import Settings from "./pages/Settings";
 import ApiDocs from "./pages/ApiDocs";
 import NotFound from "./pages/NotFound";
@@ -39,6 +40,7 @@ const App = () => (
               <Route path="/rules" element={<RulesStudio />} />
               <Route path="/simulation" element={<SimulationLab />} />
               <Route path="/analytics" element={<Analytics />} />
+              <Route path="/operations" element={<Operations />} />
               <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
               <Route path="/api-docs" element={<ApiDocs />} />
               <Route path="*" element={<NotFound />} />

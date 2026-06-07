@@ -38,6 +38,7 @@ import { InferenceTab } from '@/components/cases/InferenceTab';
 import { RulesTraceTab } from '@/components/cases/RulesTraceTab';
 import { HistoryTab } from '@/components/cases/HistoryTab';
 import { EvidenceTab } from '@/components/cases/EvidenceTab';
+import { ReplayPanel } from '@/components/replay/ReplayPanel';
 
 type DecisionTrace = {
   traceId?: string;
@@ -638,6 +639,10 @@ export default function CaseDetail() {
           organizationId={(caseData as any).organizationId ?? (caseData as any).organization_id}
           ir={ir}
         />
+
+        <ReplayPanel caseId={caseData.id} />
+
+
 
         <Tabs defaultValue="overview" className="space-y-4">
           <TabsList className="bg-surface-2 border border-border">
