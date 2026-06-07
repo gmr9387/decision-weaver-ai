@@ -9,6 +9,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { RuleListPanel } from '@/components/rules/RuleListPanel';
 import { RuleDetailPanel } from '@/components/rules/RuleDetailPanel';
 import { RuleFormDialog, emptyForm, type RuleForm } from '@/components/rules/RuleFormDialog';
+import { GovernanceDashboard } from '@/components/rules/GovernanceDashboard';
 import { Badge } from '@/components/ui/badge';
 import {
   Activity,
@@ -561,6 +562,8 @@ export default function RulesStudio() {
 
         <div className="flex flex-col flex-1 min-w-0">
           <AccuracyReadinessPanel rules={rules} selectedRule={selected} />
+
+          <GovernanceDashboard rules={rules} />
 
           <RuleDetailPanel
             rule={selected}

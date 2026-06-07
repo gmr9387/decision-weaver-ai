@@ -13,6 +13,7 @@ import {
   LogOut,
   User,
   BookOpen,
+  History,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/hooks/use-auth';
@@ -45,6 +46,7 @@ const navItems: NavItem[] = [
   { path: '/rules', label: 'Rules Studio', icon: Scale, minRole: 'analyst' },
   { path: '/simulation', label: 'Simulation Lab', icon: FlaskConical, minRole: 'analyst' },
   { path: '/analytics', label: 'Analytics', icon: BarChart3, minRole: 'manager' },
+  { path: '/operations', label: 'Operations', icon: History, minRole: 'analyst' },
   { path: '/api-docs', label: 'API Docs', icon: BookOpen, minRole: 'analyst' },
   { path: '/settings', label: 'Settings', icon: Settings, minRole: 'admin' },
 ];
