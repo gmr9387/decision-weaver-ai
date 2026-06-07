@@ -28,6 +28,7 @@ import {
   Loader2,
   Plus,
   MoreHorizontal,
+  FileText,
   Play,
   ChevronLeft,
   UserCheck,
@@ -181,10 +182,10 @@ export default function Cases() {
   }, [allCases, search, sortField, sortDir, severityFilter, decisionFilter, reviewFilter]);
 
   const reviewSummary = useMemo(() => {
-    const unreviewed = allCases.filter((c) => !c.reviewState || c.reviewState === 'unreviewed').length;
+    const unreviewed = allCases.filter((c) => !c.reviewState || c.reviewState === 'pending').length;
     const inReview = allCases.filter((c) => c.reviewState === 'in_review').length;
-    const approved = allCases.filter((c) => c.reviewState === 'approved').length;
-    const needsInfo = allCases.filter((c) => c.reviewState === 'needs_info').length;
+    const approved = allCases.filter((c) => c.reviewState === 'completed').length;
+    const needsInfo = allCases.filter((c) => c.reviewState === 'reopened').length;
 
     return { unreviewed, inReview, approved, needsInfo };
   }, [allCases]);

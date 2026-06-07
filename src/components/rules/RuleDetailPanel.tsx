@@ -64,7 +64,7 @@ function RuleVersionHistory({ ruleId }: { ruleId: string }) {
         throw new Error(queryError.message);
       }
 
-      return (data || []) as RuleVersionRow[];
+      return (data || []) as unknown as RuleVersionRow[];
     },
     enabled: !!ruleId,
     staleTime: 30000,

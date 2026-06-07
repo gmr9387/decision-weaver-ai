@@ -137,12 +137,14 @@ function OutcomeLoopPanel({
 
       if (queryError) throw new Error(queryError.message);
 
-      if (data) {
-        setActualOutcome((data as CaseOutcome).actual_outcome);
-        setNotes((data as CaseOutcome).notes || '');
+      const row = data as unknown as CaseOutcome | null;
+
+      if (row) {
+        setActualOutcome(row.actual_outcome);
+        setNotes(row.notes || '');
       }
 
-      return (data as CaseOutcome | null) ?? null;
+      return row ?? null;
     },
     enabled: !!caseId,
     staleTime: 30000,

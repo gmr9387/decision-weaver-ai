@@ -45,7 +45,7 @@ function safeDate(value?: string | null): string {
 }
 
 function normalizeConfidenceBreakdown(raw: unknown): ConfidenceBreakdown {
-  const breakdown = asObject(raw, {});
+  const breakdown = asObject(raw, {}) as Record<string, unknown>;
 
   return {
     ruleStrength: Number(breakdown.ruleStrength ?? 0),

@@ -94,7 +94,7 @@ export default function Analytics() {
         .order('labeled_at', { ascending: false });
 
       if (error) throw new Error(error.message);
-      return (data || []) as CaseOutcome[];
+      return (data || []) as unknown as CaseOutcome[];
     },
     staleTime: 30000,
   });
@@ -120,7 +120,7 @@ export default function Analytics() {
       return acc;
     }, {}),
   )
-    .map(([name, value]) => ({ name: name.replaceAll('_', ' '), value }))
+    .map(([name, value]) => ({ name: name.split('_').join(' '), value }))
     .sort((a, b) => b.value - a.value);
 
   const decisionDist = Object.entries(
