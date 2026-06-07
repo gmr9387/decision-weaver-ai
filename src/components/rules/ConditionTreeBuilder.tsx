@@ -15,6 +15,7 @@ import {
   GitBranch,
   ChevronDown,
   AlertTriangle,
+  CheckCircle2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -42,15 +43,15 @@ interface RawCondition {
 }
 
 const OPERATORS = [
-  { value: 'equals', label: '=' },
-  { value: 'notEquals', label: '≠' },
-  { value: 'greaterThan', label: '>' },
-  { value: 'greaterThanOrEqual', label: '≥' },
-  { value: 'lessThan', label: '<' },
-  { value: 'lessThanOrEqual', label: '≤' },
-  { value: 'contains', label: 'contains' },
-  { value: 'in', label: 'in' },
-  { value: 'exists', label: 'exists' },
+  { value: 'equals', label: '= equals', hint: 'Exact match' },
+  { value: 'notEquals', label: '≠ not equals', hint: 'Does not match' },
+  { value: 'greaterThan', label: '> greater than', hint: 'Numeric comparison' },
+  { value: 'greaterThanOrEqual', label: '≥ greater/equal', hint: 'Numeric comparison' },
+  { value: 'lessThan', label: '< less than', hint: 'Numeric comparison' },
+  { value: 'lessThanOrEqual', label: '≤ less/equal', hint: 'Numeric comparison' },
+  { value: 'contains', label: 'contains', hint: 'Text includes value' },
+  { value: 'in', label: 'in list', hint: 'Use JSON array: ["A","B"]' },
+  { value: 'exists', label: 'exists', hint: 'Value is present' },
 ];
 
 export function fromJson(raw: unknown): ConditionNode {
@@ -91,12 +92,12 @@ export function fromJson(raw: unknown): ConditionNode {
 export function toJson(node: ConditionNode): unknown {
   if (node.kind === 'leaf') {
     const payload: Record<string, unknown> = {
-      fact: node.data.fact,
+      fact: node.data.fact.trim(),
       operator: node.data.operator,
     };
 
     if (node.data.operator !== 'exists') {
-      payload.value = autoType(node.data.value);
+      payload.value = autoType(node.data.value, node.data.operator);
     }
 
     return payload;
@@ -107,10 +108,22 @@ export function toJson(node: ConditionNode): unknown {
   };
 }
 
-function autoType(value: string | number | boolean): string | number | boolean {
+function autoType(value: string | number | boolean, operator?: string): unknown {
   if (typeof value === 'number' || typeof value === 'boolean') return value;
 
   const trimmed = value.trim();
+
+  if (operator === 'in') {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      return trimmed
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+  }
 
   if (trimmed === 'true') return true;
   if (trimmed === 'false') return false;
@@ -142,13 +155,36 @@ function makeGroup(type: 'all' | 'any'): ConditionNode {
   };
 }
 
+function countLeaves(node: ConditionNode): number {
+  if (node.kind === 'leaf') return 1;
+  return node.data.children.reduce((sum, child) => sum + countLeaves(child), 0);
+}
+
+function countGroups(node: ConditionNode): number {
+  if (node.kind === 'leaf') return 0;
+  return 1 + node.data.children.reduce((sum, child) => sum + countGroups(child), 0);
+}
+
 function validateLeaf(data: ConditionLeaf): string | null {
   if (!data.fact.trim()) return 'Missing fact key';
   if (!data.operator.trim()) return 'Missing operator';
   if (data.operator !== 'exists' && String(data.value ?? '').trim() === '') {
     return 'Missing value';
   }
+
+  if (data.operator === 'in') {
+    const value = String(data.value ?? '').trim();
+
+    if (!value.includes(',') && !value.startsWith('[')) {
+      return 'Use comma-separated values or a JSON array';
+    }
+  }
+
   return null;
+}
+
+function operatorHint(operator: string) {
+  return OPERATORS.find((item) => item.value === operator)?.hint;
 }
 
 function LeafEditor({
@@ -156,13 +192,16 @@ function LeafEditor({
   onChange,
   onRemove,
   dragHandleProps,
+  canRemove,
 }: {
   data: ConditionLeaf;
   onChange: (data: ConditionLeaf) => void;
   onRemove: () => void;
   dragHandleProps?: Record<string, unknown>;
+  canRemove: boolean;
 }) {
   const issue = validateLeaf(data);
+  const hint = operatorHint(data.operator);
 
   return (
     <div
@@ -192,7 +231,7 @@ function LeafEditor({
           value={data.operator}
           onValueChange={(value) => onChange({ ...data, operator: value })}
         >
-          <SelectTrigger className="bg-surface-1 h-8 text-body-sm w-28 min-w-0">
+          <SelectTrigger className="bg-surface-1 h-8 text-body-sm w-36 min-w-0">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -206,10 +245,10 @@ function LeafEditor({
 
         {data.operator !== 'exists' && (
           <Input
-            placeholder="value"
+            placeholder={data.operator === 'in' ? 'A, B, C' : 'value'}
             value={String(data.value)}
             onChange={(e) => onChange({ ...data, value: e.target.value })}
-            className="bg-surface-1 h-8 text-body-sm font-mono w-32 min-w-0"
+            className="bg-surface-1 h-8 text-body-sm font-mono w-36 min-w-0"
           />
         )}
 
@@ -218,15 +257,22 @@ function LeafEditor({
           size="icon"
           className="w-7 h-7 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive transition-all shrink-0"
           onClick={onRemove}
+          disabled={!canRemove}
+          title={!canRemove ? 'A group must keep at least one condition.' : 'Remove condition'}
         >
           <Trash2 className="w-3.5 h-3.5" />
         </Button>
       </div>
 
-      {issue && (
-        <div className="mt-2 flex items-center gap-1.5 text-caption text-warning">
-          <AlertTriangle className="w-3 h-3" />
-          {issue}
+      {(issue || hint) && (
+        <div
+          className={cn(
+            'mt-2 flex items-center gap-1.5 text-caption',
+            issue ? 'text-warning' : 'text-muted-foreground',
+          )}
+        >
+          {issue ? <AlertTriangle className="w-3 h-3" /> : <CheckCircle2 className="w-3 h-3" />}
+          {issue || hint}
         </div>
       )}
     </div>
@@ -350,6 +396,12 @@ function GroupEditor({
           {data.type === 'all' ? 'All conditions must match' : 'Any condition can match'}
         </span>
 
+        {isRoot && (
+          <span className="text-caption text-muted-foreground">
+            · {data.children.length} direct node{data.children.length !== 1 ? 's' : ''}
+          </span>
+        )}
+
         <div className="ml-auto flex items-center gap-1">
           <Button
             variant="ghost"
@@ -420,6 +472,7 @@ function GroupEditor({
                   data={child.data}
                   onChange={(next) => updateChild(index, { kind: 'leaf', data: next })}
                   onRemove={() => removeChild(index)}
+                  canRemove={data.children.length > 1}
                   dragHandleProps={{
                     onMouseDown: (event: React.MouseEvent) => event.stopPropagation(),
                   }}
@@ -454,12 +507,39 @@ export function ConditionTreeBuilder({ value, onChange }: ConditionTreeBuilderPr
           data: ConditionGroup;
         });
 
+  const leaves = countLeaves(rootGroup);
+  const groups = countGroups(rootGroup);
+
   return (
-    <GroupEditor
-      data={rootGroup.data}
-      onChange={(data) => onChange({ kind: 'group', data })}
-      depth={0}
-      isRoot
-    />
+    <div className="space-y-3">
+      <div className="rounded-lg border border-border bg-surface-2 p-3">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-body-sm font-semibold text-foreground">
+              Condition Tree
+            </p>
+            <p className="text-caption text-muted-foreground">
+              Build nested AND/OR logic. The visual tree will serialize into rule JSON automatically.
+            </p>
+          </div>
+
+          <div className="flex gap-2">
+            <span className="rounded-md bg-background/50 px-2 py-1 text-caption text-muted-foreground">
+              {leaves} condition{leaves !== 1 ? 's' : ''}
+            </span>
+            <span className="rounded-md bg-background/50 px-2 py-1 text-caption text-muted-foreground">
+              {groups} group{groups !== 1 ? 's' : ''}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <GroupEditor
+        data={rootGroup.data}
+        onChange={(data) => onChange({ kind: 'group', data })}
+        depth={0}
+        isRoot
+      />
+    </div>
   );
 }
