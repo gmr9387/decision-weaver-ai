@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -18,6 +19,7 @@ import {
   ShieldCheck,
   AlertTriangle,
   CheckCircle2,
+  FileSearch,
 } from 'lucide-react';
 import type { RuleType } from '@/lib/types';
 import {
@@ -178,6 +180,7 @@ export function RuleFormDialog({
   const conditionsParsed = parseJson(form.conditions, null);
   const conditionTree = safeParseConditions(form.conditions);
   const conditionIssues = useMemo(() => collectConditionIssues(conditionTree), [conditionTree]);
+  const outputParsed = useMemo(() => parseJson<Record<string, any>>(form.output, {}), [form.output]);
   const outputIssues = useMemo(() => validateOutput(form.output), [form.output]);
 
   const priorityWarning =
@@ -209,6 +212,14 @@ export function RuleFormDialog({
   );
 
   const disabled = isPending || blockingIssues.length > 0;
+
+  const outputDecision = outputParsed.ok
+    ? outputParsed.value.decision || outputParsed.value.action || 'missing'
+    : 'invalid';
+
+  const outputEvidence = outputParsed.ok
+    ? outputParsed.value.evidence || outputParsed.value.evidenceRef || outputParsed.value.evidence_ref || ''
+    : '';
 
   const handleTreeChange = (node: ConditionNode) => {
     const json = JSON.stringify(toJson(node), null, 2);
@@ -251,6 +262,42 @@ export function RuleFormDialog({
                 Rule passes basic governance checks.
               </p>
             )}
+          </div>
+
+          <div className="rounded-xl border border-border bg-surface-2 p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <FileSearch className="w-4 h-4 text-primary" />
+              <h3 className="text-body-sm font-semibold text-foreground">
+                Output Contract Preview
+              </h3>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="rounded-lg bg-background/50 p-3">
+                <p className="text-caption text-muted-foreground">Decision</p>
+                <Badge
+                  variant={VALID_DECISIONS.includes(String(outputDecision)) ? 'secondary' : 'warning'}
+                  className="mt-1 capitalize"
+                >
+                  {String(outputDecision).replace('_', ' ')}
+                </Badge>
+              </div>
+
+              <div className="rounded-lg bg-background/50 p-3">
+                <p className="text-caption text-muted-foreground">Confidence Impact</p>
+                <p className={`mt-1 font-mono ${form.confidenceImpact >= 0 ? 'text-success' : 'text-destructive'}`}>
+                  {form.confidenceImpact >= 0 ? '+' : ''}
+                  {form.confidenceImpact}
+                </p>
+              </div>
+
+              <div className="rounded-lg bg-background/50 p-3">
+                <p className="text-caption text-muted-foreground">Evidence Ref</p>
+                <p className="mt-1 truncate font-mono text-caption text-foreground">
+                  {outputEvidence || 'none'}
+                </p>
+              </div>
+            </div>
           </div>
 
           <div className="space-y-2">
