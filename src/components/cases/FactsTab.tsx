@@ -11,6 +11,8 @@ import {
   CheckCircle2,
   GitBranch,
   FileSearch,
+  ShieldCheck,
+  Activity,
 } from 'lucide-react';
 import type { Case, InferenceResult } from '@/lib/types';
 import { supabase } from '@/integrations/supabase/client';
@@ -44,9 +46,9 @@ function parseFactValue(value: string): any {
 }
 
 function getRuleUsageForFact(ir: any, factKey: string) {
-  const firedRules = arr(ir?.firedRules ?? ir?.fired_rules);
+  const allRules = arr(ir?.firedRules ?? ir?.fired_rules);
 
-  return firedRules.filter((rule) => {
+  return allRules.filter((rule) => {
     const met = arr(rule.conditionsMet).join(' ');
     const unmet = arr(rule.conditionsUnmet).join(' ');
     return met.includes(factKey) || unmet.includes(factKey);
@@ -66,13 +68,44 @@ export function FactsTab({ caseId, caseData, ir }: FactsTabProps) {
   const verifiedFacts = presentFacts.filter((f) => f.quality === 'verified');
   const inferredFacts = presentFacts.filter((f) => f.quality === 'inferred');
   const unverifiedFacts = presentFacts.filter((f) => f.quality === 'unverified');
+  const derivedFacts = presentFacts.filter((f) => f.derived);
+
   const missingFacts = arr((ir as any)?.missingFacts ?? (ir as any)?.missing_facts);
   const contradictions = arr((ir as any)?.contradictions);
+
+  const referencedFacts = new Set<string>();
+
+  for (const fact of presentFacts) {
+    if (getRuleUsageForFact(ir, fact.key).length > 0) {
+      referencedFacts.add(fact.key);
+    }
+  }
 
   const completeness =
     presentFacts.length + missingFacts.length > 0
       ? Math.round((presentFacts.length / (presentFacts.length + missingFacts.length)) * 100)
       : 100;
+
+  const verificationRate =
+    presentFacts.length > 0
+      ? Math.round((verifiedFacts.length / presentFacts.length) * 100)
+      : 0;
+
+  const ruleCoverageRate =
+    presentFacts.length > 0
+      ? Math.round((referencedFacts.size / presentFacts.length) * 100)
+      : 0;
+
+  const runReadiness = Math.max(
+    0,
+    Math.min(
+      100,
+      completeness -
+        missingFacts.length * 5 -
+        contradictions.length * 10 -
+        unverifiedFacts.length * 2,
+    ),
+  );
 
   const addFactMutation = useMutation({
     mutationFn: async () => {
@@ -92,6 +125,7 @@ export function FactsTab({ caseId, caseData, ir }: FactsTabProps) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['case', caseId] });
+      queryClient.invalidateQueries({ queryKey: ['cases'] });
       setNewFactKey('');
       setNewFactValue('');
       toast({ title: 'Fact added' });
@@ -99,7 +133,7 @@ export function FactsTab({ caseId, caseData, ir }: FactsTabProps) {
     onError: (err: any) =>
       toast({
         title: 'Error',
-        description: err.message,
+        description: err?.message || 'Could not add fact.',
         variant: 'destructive',
       }),
   });
@@ -133,10 +167,36 @@ export function FactsTab({ caseId, caseData, ir }: FactsTabProps) {
 
         <div className="rounded-xl border border-border bg-gradient-card p-5">
           <div className="flex items-center gap-2 mb-2">
+            <ShieldCheck className="w-4 h-4 text-primary" />
+            <span className="text-caption text-muted-foreground">Run Readiness</span>
+          </div>
+          <div className="text-2xl font-semibold text-primary">{runReadiness}%</div>
+        </div>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <div className="rounded-xl border border-border bg-gradient-card p-5">
+          <div className="flex items-center gap-2 mb-2">
             <FileSearch className="w-4 h-4 text-primary" />
             <span className="text-caption text-muted-foreground">Completeness</span>
           </div>
           <div className="text-2xl font-semibold text-primary">{completeness}%</div>
+        </div>
+
+        <div className="rounded-xl border border-border bg-gradient-card p-5">
+          <div className="flex items-center gap-2 mb-2">
+            <CheckCircle2 className="w-4 h-4 text-success" />
+            <span className="text-caption text-muted-foreground">Verification Rate</span>
+          </div>
+          <div className="text-2xl font-semibold text-success">{verificationRate}%</div>
+        </div>
+
+        <div className="rounded-xl border border-border bg-gradient-card p-5">
+          <div className="flex items-center gap-2 mb-2">
+            <Activity className="w-4 h-4 text-primary" />
+            <span className="text-caption text-muted-foreground">Rule Coverage</span>
+          </div>
+          <div className="text-2xl font-semibold text-foreground">{ruleCoverageRate}%</div>
         </div>
       </div>
 
@@ -282,6 +342,10 @@ export function FactsTab({ caseId, caseData, ir }: FactsTabProps) {
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Unverified</span>
                 <span className="font-mono text-warning">{unverifiedFacts.length}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Derived</span>
+                <span className="font-mono text-foreground">{derivedFacts.length}</span>
               </div>
             </div>
           </div>
