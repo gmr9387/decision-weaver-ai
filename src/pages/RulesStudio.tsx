@@ -10,13 +10,13 @@ import { RuleListPanel } from '@/components/rules/RuleListPanel';
 import { RuleDetailPanel } from '@/components/rules/RuleDetailPanel';
 import { RuleFormDialog, emptyForm, type RuleForm } from '@/components/rules/RuleFormDialog';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import {
   Activity,
   AlertTriangle,
   BarChart3,
   CheckCircle2,
   ShieldCheck,
+  History,
 } from 'lucide-react';
 import type { Rule } from '@/lib/types';
 
@@ -59,6 +59,7 @@ type RuleHealth = {
   firedCount: number;
   enabled: boolean;
   priority: number;
+  version: number;
   readiness: 'strong' | 'watch' | 'inactive';
   notes: string[];
 };
@@ -128,17 +129,9 @@ function validateOutput(output: Record<string, any>) {
 }
 
 function validateRuleForm(form: RuleForm) {
-  if (!form.name?.trim()) {
-    throw new Error('Rule name is required.');
-  }
-
-  if (!form.category?.trim()) {
-    throw new Error('Rule category is required.');
-  }
-
-  if (!form.type?.trim()) {
-    throw new Error('Rule type is required.');
-  }
+  if (!form.name?.trim()) throw new Error('Rule name is required.');
+  if (!form.category?.trim()) throw new Error('Rule category is required.');
+  if (!form.type?.trim()) throw new Error('Rule type is required.');
 
   if (!Number.isFinite(Number(form.priority))) {
     throw new Error('Priority must be a number.');
@@ -192,12 +185,13 @@ function AccuracyReadinessPanel({
 
       if (!rule.enabled) notes.push('Rule is disabled.');
       if (rule.hitCount === 0) notes.push('No recorded hits yet.');
-      if (rule.priority >= 8) notes.push('High priority rule.');
+      if (rule.priority <= 2) notes.push('Critical priority rule.');
       if (!rule.explanationTemplate?.trim()) notes.push('Missing explanation template.');
+      if (!rule.version || rule.version < 1) notes.push('Rule version is missing.');
 
       const readiness: RuleHealth['readiness'] = !rule.enabled
         ? 'inactive'
-        : rule.hitCount > 0 && rule.explanationTemplate?.trim()
+        : rule.hitCount > 0 && rule.explanationTemplate?.trim() && rule.version >= 1
           ? 'strong'
           : 'watch';
 
@@ -206,6 +200,7 @@ function AccuracyReadinessPanel({
         firedCount: rule.hitCount,
         enabled: rule.enabled,
         priority: rule.priority,
+        version: rule.version,
         readiness,
         notes,
       });
@@ -219,12 +214,14 @@ function AccuracyReadinessPanel({
   const totals = useMemo(() => {
     const enabled = rules.filter((r) => r.enabled).length;
     const withHits = rules.filter((r) => r.hitCount > 0).length;
+    const versioned = rules.filter((r) => Number(r.version || 0) >= 1).length;
     const totalHits = rules.reduce((sum, rule) => sum + Number(rule.hitCount || 0), 0);
     const casesWithDecisions = cases.filter((c) => c.inferenceResult).length;
 
     return {
       enabled,
       withHits,
+      versioned,
       totalHits,
       casesWithDecisions,
       totalRules: rules.length,
@@ -240,7 +237,7 @@ function AccuracyReadinessPanel({
             <h3 className="text-body-md font-semibold text-foreground">Rule Readiness</h3>
           </div>
           <p className="text-body-sm text-muted-foreground mt-1">
-            Lightweight readiness based on current rule state and observed inference activity.
+            Readiness based on enabled state, versioning, explanation coverage, and observed inference activity.
           </p>
         </div>
 
@@ -249,11 +246,11 @@ function AccuracyReadinessPanel({
         </Badge>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-5">
         <div className="rounded-lg border border-border bg-surface-2 p-3">
           <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
             <Activity className="w-3.5 h-3.5" />
-            Enabled Rules
+            Enabled
           </div>
           <p className="mt-1 text-xl font-semibold text-foreground">
             {totals.enabled}/{totals.totalRules}
@@ -262,8 +259,18 @@ function AccuracyReadinessPanel({
 
         <div className="rounded-lg border border-border bg-surface-2 p-3">
           <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
+            <History className="w-3.5 h-3.5" />
+            Versioned
+          </div>
+          <p className="mt-1 text-xl font-semibold text-foreground">
+            {totals.versioned}/{totals.totalRules}
+          </p>
+        </div>
+
+        <div className="rounded-lg border border-border bg-surface-2 p-3">
+          <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
             <BarChart3 className="w-3.5 h-3.5" />
-            Rules With Hits
+            With Hits
           </div>
           <p className="mt-1 text-xl font-semibold text-foreground">{totals.withHits}</p>
         </div>
@@ -349,6 +356,16 @@ export default function RulesStudio() {
     return data?.organization_id;
   };
 
+  const invalidateRuleData = (ruleId?: string | null) => {
+    queryClient.invalidateQueries({ queryKey: ['rules'] });
+    queryClient.invalidateQueries({ queryKey: ['cases'] });
+    queryClient.invalidateQueries({ queryKey: ['metrics'] });
+
+    if (ruleId) {
+      queryClient.invalidateQueries({ queryKey: ['rule-versions', ruleId] });
+    }
+  };
+
   const saveMutation = useMutation({
     mutationFn: async (f: RuleForm & { id?: string }) => {
       const orgId = await getOrgId();
@@ -379,26 +396,40 @@ export default function RulesStudio() {
           .eq('organization_id', orgId);
 
         if (error) throw error;
-      } else {
-        const { error } = await supabase
-          .from('rules')
-          .insert({
-            ...payload,
-            created_by: user?.id ?? null,
-          } as any);
 
-        if (error) throw error;
+        return { id: f.id, action: 'updated' as const };
       }
+
+      const { data, error } = await supabase
+        .from('rules')
+        .insert({
+          ...payload,
+          created_by: user?.id ?? null,
+        } as any)
+        .select('id')
+        .single();
+
+      if (error) throw error;
+
+      return { id: data?.id as string | undefined, action: 'created' as const };
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['rules'] });
+    onSuccess: (result) => {
+      invalidateRuleData(result.id || editingId);
       setDialogOpen(false);
-      toast({ title: editingId ? 'Rule updated' : 'Rule created' });
+
+      if (result.id) {
+        setSelectedRule(result.id);
+      }
+
+      toast({
+        title: result.action === 'updated' ? 'Rule updated' : 'Rule created',
+        description: 'Version history will refresh after the database snapshot trigger completes.',
+      });
     },
     onError: (err: any) => {
       toast({
         title: 'Rule validation failed',
-        description: err.message,
+        description: err?.message || 'Could not save rule.',
         variant: 'destructive',
       });
     },
@@ -416,14 +447,20 @@ export default function RulesStudio() {
         .eq('organization_id', orgId);
 
       if (error) throw error;
+
+      return id;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['rules'] });
+    onSuccess: (id) => {
+      invalidateRuleData(id);
       setSelectedRule(null);
       toast({ title: 'Rule deleted' });
     },
     onError: (err: any) => {
-      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+      toast({
+        title: 'Error',
+        description: err?.message || 'Could not delete rule.',
+        variant: 'destructive',
+      });
     },
   });
 
@@ -442,10 +479,22 @@ export default function RulesStudio() {
         .eq('organization_id', orgId);
 
       if (error) throw error;
+
+      return { id, enabled };
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['rules'] }),
+    onSuccess: ({ id, enabled }) => {
+      invalidateRuleData(id);
+      toast({
+        title: enabled ? 'Rule enabled' : 'Rule disabled',
+        description: 'Rule version history will refresh if the snapshot trigger records this change.',
+      });
+    },
     onError: (err: any) => {
-      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+      toast({
+        title: 'Error',
+        description: err?.message || 'Could not update rule.',
+        variant: 'destructive',
+      });
     },
   });
 
