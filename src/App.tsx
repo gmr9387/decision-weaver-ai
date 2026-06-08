@@ -17,6 +17,7 @@ import SimulationLab from "./pages/SimulationLab";
 import Analytics from "./pages/Analytics";
 import Operations from "./pages/Operations";
 import Platform from "./pages/Platform";
+import Architecture from "./pages/Architecture";
 import Settings from "./pages/Settings";
 import ApiDocs from "./pages/ApiDocs";
 import NotFound from "./pages/NotFound";
@@ -43,6 +44,7 @@ const App = () => (
               <Route path="/analytics" element={<Analytics />} />
               <Route path="/operations" element={<Operations />} />
               <Route path="/platform" element={<Platform />} />
+              <Route path="/architecture" element={<Architecture />} />
               <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
               <Route path="/api-docs" element={<ApiDocs />} />
               <Route path="*" element={<NotFound />} />
