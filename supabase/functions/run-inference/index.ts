@@ -1,4 +1,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  deriveCorroboratingSignals,
+  deriveDataQuality,
+} from "./confidence-metrics.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -36,13 +40,6 @@ function safeJsonParse<T>(value: unknown, fallback: T): T {
   } catch {
     return fallback;
   }
-}
-
-function isPopulated(value: unknown): boolean {
-  if (value === null || value === undefined) return false;
-  if (typeof value === "string" && value.trim() === "") return false;
-  if (Array.isArray(value) && value.length === 0) return false;
-  return true;
 }
 
 function evaluateCondition(
@@ -134,31 +131,6 @@ function collectLeaves(
   if (c.all) return c.all.flatMap((sub) => collectLeaves(sub, facts));
   if (c.any) return c.any.flatMap((sub) => collectLeaves(sub, facts));
   return [evaluateCondition(c, facts)];
-}
-
-function deriveDataQuality(
-  facts: Record<string, unknown>,
-  missingFacts: string[],
-  evidenceRefs: string[],
-): number {
-  const totalFacts = Object.keys(facts).length;
-  const populatedFacts = Object.values(facts).filter(isPopulated).length;
-
-  const populationScore =
-    totalFacts > 0 ? Math.round((populatedFacts / totalFacts) * 100) : 0;
-
-  const missingPenalty = missingFacts.length * 10;
-  const evidenceBoost = Math.min(15, evidenceRefs.length * 3);
-
-  return Math.max(0, Math.min(100, populationScore + evidenceBoost - missingPenalty));
-}
-
-function deriveCorroboratingSignals(firedRules: any[]): number {
-  const critical = firedRules.filter((r) => r.fired && Number(r.priority) <= 2).length;
-  const high = firedRules.filter((r) => r.fired && Number(r.priority) > 2 && Number(r.priority) <= 4).length;
-  const normal = firedRules.filter((r) => r.fired && Number(r.priority) > 4).length;
-
-  return Math.min(100, critical * 30 + high * 20 + normal * 8);
 }
 
 async function runAIAssisted(
