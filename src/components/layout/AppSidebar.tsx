@@ -15,6 +15,7 @@ import {
   BookOpen,
   History,
   Boxes,
+  Layers,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/hooks/use-auth';
@@ -43,6 +44,7 @@ const ROLE_RANK: Record<Role, number> = {
 
 const navItems: NavItem[] = [
   { path: '/platform', label: 'Platform', icon: Boxes },
+  { path: '/architecture', label: 'Architecture', icon: Layers },
   { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/cases', label: 'Cases', icon: FileText },
   { path: '/rules', label: 'Rules Studio', icon: Scale, minRole: 'analyst' },
