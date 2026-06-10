@@ -3,6 +3,10 @@ import {
   deriveCorroboratingSignals,
   deriveDataQuality,
 } from "./confidence-metrics.ts";
+import {
+  resolveDecision,
+  type Decision,
+} from "./decision-engine.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -17,15 +21,6 @@ interface Condition {
   all?: Condition[];
   any?: Condition[];
 }
-
-type Decision =
-  | "approve"
-  | "deny"
-  | "escalate"
-  | "review"
-  | "flag"
-  | "request_info"
-  | "unresolved";
 
 type RuleVersionRef = {
   id: string;
@@ -388,7 +383,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    const uniqueDecisions = Object.keys(decisionVotes);
     const opposingPairs = [["approve", "deny"], ["escalate", "resolve"]];
 
     for (const [a, b] of opposingPairs) {
@@ -425,25 +419,12 @@ Deno.serve(async (req) => {
       ),
     );
 
-    let decision: Decision = "unresolved";
-
-    if (uniqueDecisions.length > 0) {
-      decision = uniqueDecisions.reduce((a, b) =>
-        decisionVotes[a] >= decisionVotes[b] ? a : b
-      ) as Decision;
-    }
-
-    if (contradictions.length > 0 && finalConfidence < 75) {
-      decision = "review";
-    }
-
-    if (missingFacts.length > 0 && finalConfidence < 55 && decision !== "deny" && decision !== "escalate") {
-      decision = "request_info";
-    }
-
-    if (finalConfidence < 40 && decision !== "deny" && decision !== "escalate" && decision !== "request_info") {
-      decision = "review";
-    }
+    let { decision } = resolveDecision({
+      decisionVotes,
+      contradictions,
+      missingFacts,
+      finalConfidence,
+    });
 
     const firedExplanations = firedRules
       .filter((r) => r.fired && r.explanation)
