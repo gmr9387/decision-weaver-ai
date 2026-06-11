@@ -5,6 +5,11 @@ import {
   isPopulated,
 } from "./confidence-metrics.ts";
 import { resolveDecision } from "./decision-engine.ts";
+import {
+  deriveContradictionPenalty,
+  deriveMissingFactPenalty,
+  deriveSeverity,
+} from "./governance-engine.ts";
 import { buildDecisionTrace } from "./trace-engine.ts";
 
 Deno.test("isPopulated: handles empty/null/undefined", () => {
@@ -147,4 +152,76 @@ Deno.test("buildDecisionTrace: shapes output and rounds confidence inputs", () =
   assertEquals(trace.confidenceInputs.dataQuality, 100);
   assertEquals(trace.ruleTrace.length, 1);
   assert(typeof trace.evaluatedAt === "string");
+});
+
+Deno.test("deriveContradictionPenalty: zero contradictions", () => {
+  const r = deriveContradictionPenalty([]);
+  assertEquals(r.penalty, 0);
+  assertEquals(r.severityPenalty, 0);
+});
+
+Deno.test("deriveContradictionPenalty: one contradiction", () => {
+  const r = deriveContradictionPenalty(["c1"]);
+  assertEquals(r.penalty, 15);
+  assertEquals(r.severityPenalty, 0);
+});
+
+Deno.test("deriveContradictionPenalty: two contradictions", () => {
+  const r = deriveContradictionPenalty(["c1", "c2"]);
+  assertEquals(r.penalty, 30);
+  assertEquals(r.severityPenalty, 10);
+});
+
+Deno.test("deriveContradictionPenalty: four contradictions", () => {
+  const r = deriveContradictionPenalty(["c1", "c2", "c3", "c4"]);
+  assertEquals(r.penalty, 60);
+  assertEquals(r.severityPenalty, 20);
+});
+
+Deno.test("deriveMissingFactPenalty: empty", () => {
+  assertEquals(deriveMissingFactPenalty([]), 0);
+});
+
+Deno.test("deriveMissingFactPenalty: three missing", () => {
+  assertEquals(deriveMissingFactPenalty(["a", "b", "c"]), 24);
+});
+
+Deno.test("deriveSeverity: critical when priority <= 2 fired", () => {
+  assertEquals(
+    deriveSeverity([
+      { fired: true, priority: 1 },
+      { fired: false, priority: 3 },
+    ]),
+    "critical",
+  );
+});
+
+Deno.test("deriveSeverity: high when priority <= 4 fired", () => {
+  assertEquals(
+    deriveSeverity([
+      { fired: false, priority: 1 },
+      { fired: true, priority: 3 },
+    ]),
+    "high",
+  );
+});
+
+Deno.test("deriveSeverity: medium when only low priority fired", () => {
+  assertEquals(
+    deriveSeverity([
+      { fired: true, priority: 5 },
+      { fired: false, priority: 1 },
+    ]),
+    "medium",
+  );
+});
+
+Deno.test("deriveSeverity: medium when no rules fired", () => {
+  assertEquals(
+    deriveSeverity([
+      { fired: false, priority: 1 },
+      { fired: false, priority: 3 },
+    ]),
+    "medium",
+  );
 });
