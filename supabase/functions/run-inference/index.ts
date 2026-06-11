@@ -401,10 +401,9 @@ Deno.serve(async (req) => {
       : Math.max(0, 100 - missingFacts.length * 15);
 
     const dataQuality = deriveDataQuality(facts, missingFacts, evidenceRefs);
-    const contradictionPenalty = contradictions.length * 15;
-    const contradictionSeverityPenalty =
-      contradictions.length > 3 ? 20 : contradictions.length > 1 ? 10 : 0;
-    const missingFactPenalty = missingFacts.length * 8;
+    const { penalty: contradictionPenalty, severityPenalty: contradictionSeverityPenalty } =
+      deriveContradictionPenalty(contradictions);
+    const missingFactPenalty = deriveMissingFactPenalty(missingFacts);
     const corroboratingSignals = deriveCorroboratingSignals(firedRules);
 
     const rawConfidence =
@@ -464,11 +463,7 @@ Deno.serve(async (req) => {
           ? "medium"
           : "low";
 
-    const severity = firedRules.some((r) => r.fired && r.priority <= 2)
-      ? "critical"
-      : firedRules.some((r) => r.fired && r.priority <= 4)
-        ? "high"
-        : "medium";
+    const severity = deriveSeverity(firedRules);
 
     const totalVotes = Object.values(decisionVotes).reduce((a, b) => a + b, 0) || 1;
 
