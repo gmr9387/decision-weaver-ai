@@ -2,11 +2,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   deriveCorroboratingSignals,
   deriveDataQuality,
-} from "./confidence-metrics.ts";
-import {
-  resolveDecision,
-  type Decision,
-} from "./decision-engine.ts";
+} from "./confidence-metrics";
+import { resolveDecision, type Decision } from "./decision-engine";
+import { buildDecisionTrace } from "./trace-engine";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -478,49 +476,31 @@ Deno.serve(async (req) => {
 
     const traceId = crypto.randomUUID();
 
-    const decisionTrace = {
+    const decisionTrace = buildDecisionTrace({
       traceId,
       organizationId: orgId,
-      caseId: caseId ?? null,
-      evaluatedAt: new Date().toISOString(),
+      caseId,
       mode,
-      deterministicDecision: decision,
-      deterministicDecisionPreserved: true,
-      rulesEvaluated: totalRules,
-      rulesFired: firedCount,
+      decision,
+      totalRules,
+      firedCount,
       firedRuleIds,
       missingFacts,
       contradictions,
       evidenceRefs,
       candidateDecisions,
       confidenceInputs: {
-        ruleStrength: Math.round(ruleStrength * 10) / 10,
-        corroboratingSignals: Math.round(corroboratingSignals * 10) / 10,
-        evidenceCompleteness: Math.round(evidenceCompleteness * 10) / 10,
-        dataQuality: Math.round(dataQuality * 10) / 10,
+        ruleStrength,
+        corroboratingSignals,
+        evidenceCompleteness,
+        dataQuality,
         contradictionPenalty,
         contradictionSeverityPenalty,
         missingFactPenalty,
         aiConfidenceAdjustment,
       },
-      ruleTrace: firedRules.map((rule) => ({
-        ruleId: rule.ruleId,
-        rule_id: rule.rule_id,
-        ruleName: rule.ruleName,
-        rule_name: rule.rule_name,
-        ruleVersion: rule.ruleVersion,
-        rule_version: rule.rule_version,
-        ruleSnapshotId: rule.ruleSnapshotId,
-        rule_snapshot_id: rule.rule_snapshot_id,
-        name: rule.name,
-        priority: rule.priority,
-        fired: rule.fired,
-        conditionsMet: rule.conditionsMet,
-        conditionsUnmet: rule.conditionsUnmet,
-        confidenceImpact: rule.confidenceImpact,
-        explanation: rule.explanation,
-      })),
-    };
+      firedRules,
+    });
 
     const result = {
       decision,
@@ -573,13 +553,14 @@ Deno.serve(async (req) => {
 
       if (insertError) console.error("Failed to persist inference run:", insertError);
 
-      const statusMap: Record<string, string> = {
+      const statusMap: Record<Decision, string> = {
         approve: "resolved",
         deny: "resolved",
         escalate: "escalated",
         review: "processing",
         flag: "processing",
         request_info: "pending_info",
+        unresolved: "processing",
       };
 
       const newStatus = statusMap[decision] || "processing";
