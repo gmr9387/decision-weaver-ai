@@ -4,6 +4,11 @@ import {
   deriveDataQuality,
 } from "./confidence-metrics.ts";
 import { resolveDecision, type Decision } from "./decision-engine.ts";
+import {
+  deriveContradictionPenalty,
+  deriveMissingFactPenalty,
+  deriveSeverity,
+} from "./governance-engine.ts";
 import { buildDecisionTrace } from "./trace-engine.ts";
 
 const corsHeaders = {
