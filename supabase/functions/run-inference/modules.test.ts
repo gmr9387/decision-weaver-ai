@@ -5,6 +5,11 @@ import {
   isPopulated,
 } from "./confidence-metrics.ts";
 import { resolveDecision } from "./decision-engine.ts";
+import {
+  deriveContradictionPenalty,
+  deriveMissingFactPenalty,
+  deriveSeverity,
+} from "./governance-engine.ts";
 import { buildDecisionTrace } from "./trace-engine.ts";
 
 Deno.test("isPopulated: handles empty/null/undefined", () => {
