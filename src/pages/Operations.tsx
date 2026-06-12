@@ -29,6 +29,7 @@ type RunRow = {
   decision: string;
   confidence: number;
   confidence_band: string | null;
+  severity: string | null;
   mode: string;
   created_at: string;
   fired_rules: any;
