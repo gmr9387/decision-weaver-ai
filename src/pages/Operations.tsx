@@ -184,6 +184,10 @@ export default function Operations() {
           </div>
         </div>
 
+        <EngineHealthPanel runs={runs} rules={rules} />
+
+
+
         <InspectorPanel
           icon={History}
           title="Audit Timeline"
