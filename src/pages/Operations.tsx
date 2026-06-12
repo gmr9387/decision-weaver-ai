@@ -52,7 +52,7 @@ export default function Operations() {
       const { data, error } = await supabase
         .from('inference_runs')
         .select(
-          'id, case_id, decision, confidence, confidence_band, mode, created_at, fired_rules, decision_trace, missing_facts, contradictions, trace_id',
+          'id, case_id, decision, confidence, confidence_band, severity, mode, created_at, fired_rules, decision_trace, missing_facts, contradictions, trace_id',
         )
         .order('created_at', { ascending: false })
         .limit(100);
