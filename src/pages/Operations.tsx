@@ -21,6 +21,7 @@ import {
   GitBranch,
   FileSearch,
 } from 'lucide-react';
+import { EngineHealthPanel } from '@/components/operations/EngineHealthPanel';
 
 type RunRow = {
   id: string;
