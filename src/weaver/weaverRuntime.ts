@@ -2,6 +2,7 @@
 
 import { eventBus } from "../events/eventBus";
 import { OpportunityEngine } from "./opportunityEngine";
+import { RecommendationEngine } from "./recommendationEngine";
 
 export class WeaverRuntime {
   static handle(contractName: string, payload: any) {
@@ -39,28 +40,20 @@ export class WeaverRuntime {
   }
 
   private static handleRecommendation(payload: any) {
-    const score = payload.opportunity?.score ?? 0;
+    const input = {
+      claimId: payload.claimId,
+      organizationId: payload.organizationId,
+      opportunityScore: payload.opportunity?.score ?? 0,
+      claimType: payload.claimPayload?.type,
+      orgRiskTier: payload.orgRiskTier,
+      metadata: payload.claimPayload?.metadata,
+    };
 
-    let action: "approve" | "deny" | "review" = "review";
-    let confidence = 0.5;
-
-    if (score >= 80) {
-      action = "approve";
-      confidence = 0.9;
-    } else if (score <= 20) {
-      action = "deny";
-      confidence = 0.8;
-    }
+    const recommendation = RecommendationEngine.recommend(input);
 
     const result = {
       ...payload,
-      recommendation: {
-        action,
-        confidence,
-        basis: {
-          opportunityScore: score,
-        },
-      },
+      recommendation,
     };
 
     eventBus.emit("weaver.recommendation.processed", result);
