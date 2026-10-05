@@ -44,23 +44,9 @@ Every decision is persisted, traceable, and replayable.
 
 ## Platform Architecture
 
-Decision Weaver sits inside the **ValtariOS** platform layer, which provides shared identity, navigation, and event contracts for a family of decision-domain products.
+Decision Weaver is a standalone product in the **Valtaris portfolio**. [DualPay](https://github.com/gmr9387/Dualpay) is the portfolio's flagship product; its claims-adjudication pipeline (hosted in [valtaris-nucleus](https://github.com/gmr9387/valtaris-nucleus), sharing the `valtaris-nucleus-2` Supabase project) includes its own opportunity-scoring logic in the same design lineage as this product's rules engine — same `weaver_rules` concept, same scoring approach — though the two have developed as separate codebases rather than one calling the other. [valtaris-glue](https://github.com/gmr9387/valtaris-glue) is a separate, real workflow-orchestration engine in the same portfolio with its own connector marketplace and execution runtime.
 
-```text
-┌───────────────────────────────────────────────────────────┐
-│                     Users & Applications                  │
-├───────────────────────────────────────────────────────────┤
-│                     ValtariOS Platform                    │
-│  (navigation, event contracts, service registry, health)  │
-├──────────────┬──────────────┬─────────────┬───────────────┤
-│   Weaver     │   Glue*      │  Guardian*  │   Core*       │
-│  (decisions) │  (workflows) │ (risk/gov)  │ (data/ident)  │
-├──────────────┴──────────────┴─────────────┴───────────────┤
-│                      Data Layer                           │
-│           Postgres · RLS · Realtime · Storage             │
-└───────────────────────────────────────────────────────────┘
-```
-`*` placeholder modules — see `/platform` and `/architecture` in-app.
+The in-app `/platform` and `/architecture` pages describe a broader internal **ValtariOS** platform layer (shared identity, navigation, event contracts) that this repo is not yet built on — see those pages for what's aspirational versus implemented.
 
 **Weaver internal architecture** (5 layers):
 
@@ -360,12 +346,19 @@ Near-term:
 5. **Real-time Dashboard Updates** — Postgres realtime channels for multi-user ops.
 6. **CSV / Batch Import & Export**.
 
-Longer-term (ValtariOS platform):
+Longer-term:
 
-- **Glue** — workflow orchestration between decisions
-- **Guardian** — cross-domain risk & governance
-- **Core** — shared identity, monitoring, billing
 - **Marketplace** — packaged rule sets and integrations
+- A real, wired integration with [valtaris-glue](https://github.com/gmr9387/valtaris-glue)'s workflow orchestration, rather than the two staying parallel implementations
+- The broader **ValtariOS platform layer** (shared identity, navigation, event contracts) the in-app `/platform` and `/architecture` pages describe today as placeholders
+
+---
+
+## Related Repositories
+
+- [DualPay](https://github.com/gmr9387/Dualpay) — flagship product of the Valtaris portfolio
+- [valtaris-nucleus](https://github.com/gmr9387/valtaris-nucleus) — shared backend; runs the same-lineage opportunity-scoring logic for DualPay's own claims
+- [valtaris-glue](https://github.com/gmr9387/valtaris-glue) — sibling workflow-orchestration engine
 
 ---
 
